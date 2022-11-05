@@ -1,0 +1,9 @@
+build*/
+/.vs
+EspGenerator/.vs
+EspGenerator/bin
+EspGenerator/obj
+EspGenerator/x64
+EspGeneratorTest
+EspGeneratorWrapper/.vs
+EspGeneratorWrapper/x64

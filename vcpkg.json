@@ -1,0 +1,19 @@
+{
+  "name": "skyrim-ingame-editor",
+  "version-string": "0.0.1",
+  "description": "",
+  "homepage": "",
+  "license": "MIT",
+  "dependencies": [
+    "boost-stl-interfaces",
+    "rsm-binary-io",
+    "spdlog",
+    "xbyak",
+    "nlohmann-json",
+    {
+      "name": "imgui",
+      "features": [ "dx11-binding", "win32-binding" ]
+    },
+    "magic-enum"
+  ]
+}
