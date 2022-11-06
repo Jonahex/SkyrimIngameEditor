@@ -1,5 +1,6 @@
 #include "Gui/TargetEditor.h"
 
+#include "Gui/FootIkEditor.h"
 #include "Gui/Utils.h"
 #include "Gui/WaterEditor.h"
 #include "Utils/Engine.h"
@@ -180,6 +181,9 @@ namespace SIE
 					}
 					ImGui::TreePop();
 				}
+
+				FootIkEditor("##FootIkEditor",
+					manager->graphs[manager->activeGraph]->characterInstance);
 			}
 		}
 		else

@@ -20,6 +20,37 @@ namespace SIE
 		const char* format = "%.3f", ImGuiSliderFlags flags = 0);
 	bool PushingCollapsingHeader(const char* label, ImGuiTreeNodeFlags flags = 0);
 
+	template <size_t N>
+	void Normalize(float v[N])
+	{
+		float norm = 0.f;
+		for (size_t index = 0; index < N; ++index)
+		{
+			norm += v[index] * v[index];
+		}
+		norm = std::sqrtf(norm);
+		if (norm != 0.f)
+		{
+			for (size_t index = 0; index < N; ++index)
+			{
+				v[index] /= norm;
+			}
+		}
+	}
+
+	template<size_t N>
+	bool SliderFloatNormalized(const char* label, float v[N], float v_min, float v_max,
+		const char* format = "%.3f", ImGuiSliderFlags flags = 0)
+	{
+		bool wasEdited = ImGui::SliderScalarN(label, ImGuiDataType_Float, v, static_cast<int>(N), &v_min,
+			&v_max, format, flags);
+		if (wasEdited)
+		{
+			Normalize<N>(v);
+		}
+		return wasEdited;
+	}
+
 	template<typename EnumT, typename UnderlyingT>
 	bool FlagEdit(const char* label, stl::enumeration<EnumT, UnderlyingT>& flagsValue,
 		EnumT flagMask)
