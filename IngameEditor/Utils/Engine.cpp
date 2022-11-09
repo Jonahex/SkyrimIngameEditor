@@ -1,7 +1,9 @@
 #include "Utils/Engine.h"
 
+#include <RE/T/TES.h>
 #include <RE/T/TESDataHandler.h>
 #include <RE/T/TESGlobal.h>
+#include <RE/T/TESWaterSystem.h>
 
 #include <magic_enum.hpp>
 
@@ -9,12 +11,12 @@ namespace SIE
 {
 	float U8ToFloatColor(uint8_t value)
 	{
-	    return static_cast<float>(value) / 255.f;
+	    return std::min(static_cast<float>(value) / 255.f, 1.f);
 	}
 
 	uint8_t FloatToU8Color(float value)
 	{
-	    return static_cast<uint8_t>(255.f * value);
+	    return static_cast<uint8_t>(std::min(255.f, 255.f * value));
 	}
 
 	std::string GetFullName(const RE::TESForm& form)
@@ -64,6 +66,15 @@ namespace SIE
 			ResetTimeTo(0.0f);
 			break;
 		default:;
+		}
+	}
+
+	void SetVisibility(RE::VISIBILITY visibility, bool isVisible)
+	{
+		RE::TES::GetSingleton()->SetVisibility(visibility, isVisible, false);
+		if (visibility == RE::VISIBILITY::kWater)
+		{
+			RE::TESWaterSystem::GetSingleton()->SetVisibility(isVisible, false, false);
 		}
 	}
 }

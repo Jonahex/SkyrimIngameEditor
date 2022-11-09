@@ -496,43 +496,6 @@ namespace BehaviorGraph
 		static inline bool enable = true;
 	};
 
-	struct TESObjectREFR_ProcessEvent
-	{
-		static RE::BSEventNotifyControl thunk(RE::BSTEventSink<RE::BSAnimationGraphEvent>* sink, const RE::BSAnimationGraphEvent* event, RE::BSTEventSource<RE::BSAnimationGraphEvent>* eventSource)
-		{
-			if (enable && refr == reinterpret_cast<RE::TESObjectREFR*>((reinterpret_cast<std::ptrdiff_t>(sink) - 0x30))) 
-			{
-				std::lock_guard lock(mutex);
-				logger::info("Event {} was received from graph", event->tag.data());
-			}
-
-			return func(sink, event, eventSource);
-		}
-		static inline REL::Relocation<decltype(thunk)> func;
-		static constexpr size_t idx = 0x1;
-
-		static inline RE::TESObjectREFR* refr = nullptr;
-		static inline bool enable = true;
-	};
-
-	struct TESObjectREFR_NotifyAnimationGraph
-	{
-		static bool thunk(RE::IAnimationGraphManagerHolder* holder, const RE::BSFixedString& eventName)
-		{
-			if (enable && refr == reinterpret_cast<RE::TESObjectREFR*>((reinterpret_cast<std::ptrdiff_t>(holder) - 0x38))) {
-				std::lock_guard lock(mutex);
-				logger::info("Event {} was sent to graph", eventName.data());
-			}
-
-			return func(holder, eventName);
-		}
-		static inline REL::Relocation<decltype(thunk)> func;
-		static constexpr size_t idx = 0x1;
-
-		static inline RE::TESObjectREFR* refr = nullptr;
-		static inline bool enable = true;
-	};
-
 	struct Test
 	{
 		static void thunk(void* mediator, RE::BGSActionData* action)
@@ -602,12 +565,6 @@ namespace BehaviorGraph
 					{
 						const bool enableProcess = !(eventsState & 0b1);
 						const bool enableSend = !(eventsState & 0b10);
-
-						TESObjectREFR_ProcessEvent::refr = refr;
-						TESObjectREFR_ProcessEvent::enable = enableProcess;
-
-						TESObjectREFR_NotifyAnimationGraph::refr = refr;
-						TESObjectREFR_NotifyAnimationGraph::enable = enableSend;
 					}
 					{
 						const bool enableSetNonEveryFrame = !(varsState & 0b1);
@@ -740,28 +697,6 @@ namespace BehaviorGraph
 			};
 			for (const auto& target : targets) {
 				stl::write_thunk_call<Test>(target.address());
-			}
-		}
-
-		{
-			stl::write_vfunc<RE::TESObjectREFR, 0x2, TESObjectREFR_ProcessEvent>();
-
-			const std::array targets{
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(36972, 37997), OFFSET(34, 34)),
-			};
-			for (const auto& target : targets) {
-				stl::write_thunk_call<TESObjectREFR_ProcessEvent>(target.address());
-			}
-		}
-
-		{
-			stl::write_vfunc<RE::TESObjectREFR, 0x3, TESObjectREFR_NotifyAnimationGraph>();
-
-			const std::array targets{
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(37020, 38048), OFFSET(0, 0)),
-			};
-			for (const auto& target : targets) {
-				stl::write_thunk_jmp<TESObjectREFR_NotifyAnimationGraph>(target.address());
 			}
 		}
 
@@ -964,7 +899,7 @@ namespace Hooks
 
 			stl::write_vfunc<BehaviorGraph::TESWaterObject_dtor>(RE::VTABLE_TESWaterObject[0]);
 
-			stl::write_vfunc<BehaviorGraph::TestHook>(RE::VTABLE_BSWaterShader[0]);
+			//stl::write_vfunc<BehaviorGraph::TestHook>(RE::VTABLE_BSWaterShader[0]);
 
 			//stl::write_vfunc<BehaviorGraph::TestHook>(RE::VTABLE_BSWaterShaderMaterial[0]);
 

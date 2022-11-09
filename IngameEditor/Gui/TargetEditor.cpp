@@ -4,10 +4,14 @@
 #include "Gui/Utils.h"
 #include "Gui/WaterEditor.h"
 #include "Utils/Engine.h"
+#include "Utils/GraphTracker.h"
+#include "Utils/TargetManager.h"
+
+#define FTS_FUZZY_MATCH_IMPLEMENTATION
+#include "3rdparty/fts_fuzzy_match.h"
 
 #include <RE/B/BSAnimationGraphManager.h>
 #include <RE/B/BShkbAnimationGraph.h>
-#include <RE/C/Console.h>
 #include <RE/H/hkbBehaviorGraph.h>
 #include <RE/H/hkbBehaviorGraphData.h>
 #include <RE/H/hkbVariableInfo.h>
@@ -16,6 +20,7 @@
 #include <RE/T/TESWaterForm.h>
 
 #include <imgui.h>
+#include <imgui_stdlib.h>
 
 namespace SIE
 {
@@ -23,7 +28,7 @@ namespace SIE
     {
 		ImGui::PushID(label);
 
-		const auto target = RE::Console::GetSelectedRef();
+		const auto target = TargetManager::Instance().GetTarget();
 		if (target != nullptr)
 		{
 			const auto base = target->GetBaseObject();
@@ -35,7 +40,7 @@ namespace SIE
 			{
 				if (PushingCollapsingHeader("ActorState"))
 				{
-					const RE::Actor* targetActor = static_cast<RE::Actor*>(target.get());
+					const RE::Actor* targetActor = static_cast<RE::Actor*>(target);
 					ImGui::Text(
 						std::format("movingBack is {}", bool(targetActor->actorState1.movingBack))
 							.c_str());
@@ -134,56 +139,139 @@ namespace SIE
 			target->GetAnimationGraphManager(manager);
 			if (manager != nullptr)
 			{
-				if (PushingCollapsingHeader("Graph variables"))
+				if (PushingCollapsingHeader("Behavior"))
 				{
-					for (const auto& graph : manager->graphs)
+					if (PushingCollapsingHeader("Variables"))
 					{
-						std::map<std::string, int> variables;
-						for (const auto& [name, index] : graph->projectDBData->variables)
+						static std::string filter;
+						ImGui::InputText("Filter", &filter);
+
+						std::map<std::string, std::pair<RE::BShkbAnimationGraph*, int>> variables;
+						for (const auto& graph : manager->graphs)
 						{
-							variables[name.c_str()] = index;
+							for (const auto& [name, index] : graph->projectDBData->variables)
+							{
+								if (filter.empty() ||
+									fts::fuzzy_match_simple(filter.c_str(), name.c_str()))
+								{
+									variables[name.c_str()] = { graph.get(), index };
+								}
+							}
 						}
-						for (const auto& [name, index] : variables)
+						for (const auto& [name, varData] : variables)
 						{
+							const auto& [graph, index] = varData;
 							const auto varType =
 								graph->behaviorGraph->data->variableInfos[index].m_type;
 							const auto& variableValues = graph->behaviorGraph->variableValueSet;
 							if (varType.get() ==
 								RE::hkbVariableInfo::VariableType::VARIABLE_TYPE_BOOL)
 							{
-								const auto value = variableValues->m_wordVariableValues[index].b;
-								ImGui::Text(std::format("{} = {}", name.data(), value).c_str());
+								auto& value = variableValues->m_wordVariableValues[index].b;
+								ImGui::Checkbox(name.data(), &value);
 							}
 							else if (varType.get() ==
 									 RE::hkbVariableInfo::VariableType::VARIABLE_TYPE_INT32)
 							{
-								const auto value = variableValues->m_wordVariableValues[index].i;
-								ImGui::Text(std::format("{} = {}", name.data(), value).c_str());
+								auto& value = variableValues->m_wordVariableValues[index].i;
+								ImGui::DragInt(name.data(), &value);
 							}
 							else if (varType.get() ==
 									 RE::hkbVariableInfo::VariableType::VARIABLE_TYPE_REAL)
 							{
-								const auto value = variableValues->m_wordVariableValues[index].f;
-								ImGui::Text(std::format("{} = {}", name.data(), value).c_str());
+								auto& value = variableValues->m_wordVariableValues[index].f;
+								ImGui::DragFloat(name.data(), &value);
 							}
 							else if (varType.get() ==
 									 RE::hkbVariableInfo::VariableType::VARIABLE_TYPE_VECTOR4)
 							{
 								const auto quadIndex =
 									variableValues->m_wordVariableValues[index].i;
-								const auto& vector =
+								auto& vector =
 									variableValues->m_quadVariableValues[quadIndex].quad.m128_f32;
-								ImGui::Text(std::format("{} = [{}, {}, {}, {}]", name.data(),
-									vector[0], vector[1], vector[2], vector[3])
-												.c_str());
+								ImGui::DragFloat4(name.data(), vector);
 							}
 						}
+						ImGui::TreePop();
 					}
+
+					if (PushingCollapsingHeader("Event Simulator"))
+					{
+						static std::string filter;
+						ImGui::InputText("Filter", &filter);
+
+						std::set<std::string> events;
+						for (const auto& graph : manager->graphs)
+						{
+							for (const auto& [name, index] : graph->projectDBData->events)
+							{
+								if (filter.empty() || fts::fuzzy_match_simple(filter.c_str(), name.c_str()))
+								{
+									events.insert(name.c_str());
+								}
+							}
+						}
+						if (ImGui::BeginTable("EventsTable", 2))
+						{
+							for (const auto& name : events)
+							{
+								ImGui::TableNextRow();
+								ImGui::TableNextColumn();
+								ImGui::Text(name.c_str());
+								ImGui::TableNextColumn();
+								if (ImGui::Button("Send"))
+								{
+									target->NotifyAnimationGraph(name.c_str());
+								}
+							}
+							ImGui::EndTable();
+						}
+						ImGui::TreePop();
+					}
+
+					if (PushingCollapsingHeader("Graph Tracking"))
+					{
+						GraphTracker& tracker = GraphTracker::Instance();
+
+						bool enableTracking = tracker.GetEnableTracking();
+						if (ImGui::Checkbox("Tracking", &enableTracking))
+						{
+							tracker.SetEnableTracking(enableTracking);
+						}
+
+						if (enableTracking)
+						{
+							bool enableLogging = tracker.GetEnableLogging();
+							if (ImGui::Checkbox("Logging", &enableLogging))
+							{
+								tracker.SetEnableTracking(enableLogging);
+							}
+
+							ImGui::ListBoxHeader("##RecordedEvents");
+							constexpr size_t maxShownEvents = 1000;
+
+							const auto& recordedEvents = tracker.GetRecordedEvents();
+							size_t lineCount = 0;
+							for (auto it = recordedEvents.rbegin(); it != recordedEvents.rend();
+								 ++it)
+							{
+								if (lineCount > maxShownEvents)
+								{
+									break;
+								}
+								ImGui::Text(it->ToString().c_str());
+								++lineCount;
+							}
+							ImGui::ListBoxFooter();
+						}
+
+						ImGui::TreePop();
+					}
+
+					FootIkEditor("##FootIkEditor",
+						manager->graphs[manager->activeGraph]->characterInstance);
 					ImGui::TreePop();
 				}
-
-				FootIkEditor("##FootIkEditor",
-					manager->graphs[manager->activeGraph]->characterInstance);
 			}
 		}
 		else

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "RE/T/TESDataHandler.h"
-
+#include <RE/T/TESDataHandler.h>
 #include <RE/T/TESWeather.h>
+#include <RE/V/Visibility.h>
 
 namespace SIE
 {
@@ -13,4 +13,5 @@ namespace SIE
 	RE::TESGlobal* FindGlobal(const std::string& editorId);
 	void ResetTimeTo(float time);
 	void ResetTimeTo(RE::TESWeather::ColorTimes::ColorTime colorTime);
+	void SetVisibility(RE::VISIBILITY visibility, bool isVisible);
 }

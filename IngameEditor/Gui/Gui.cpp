@@ -2,15 +2,16 @@
 
 #include "Gui/MainWindow.h"
 #include "Utils/Hooking.h"
+#include "Utils/TargetManager.h"
+
+#include "3rdparty/detours/Detours.h"
+#include "3rdparty/dinput/dinput8.h"
 
 #include <RE/C/ControlMap.h>
 
 #include <imgui.h>
 #include <imgui_impl_dx11.h>
 #include <imgui_impl_win32.h>
-
-#include <3rdparty/detours/Detours.h>
-#include <3rdparty/dinput/dinput8.h>
 
 #include <Windows.h>
 
@@ -33,7 +34,7 @@ namespace SIE
     {
         static Gui instance;
 		return instance;
-    }
+	}
 
     Gui::Gui()
 	{
@@ -93,10 +94,6 @@ namespace SIE
 	LRESULT CALLBACK Gui::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	{
         HandleInput(hwnd, uMsg, wParam, lParam);
-
-		/*if (Gui::IsInitialized && Gui::IsFocused) {
-				return true;
-			}*/
 
 		// Always-forwarded game wndproc commands
 		switch (uMsg)
@@ -163,11 +160,6 @@ namespace SIE
 		}
 
 		return DefWindowProc(hwnd, uMsg, wParam, lParam);
-
-		/*Gui::HandleInput(hwnd, uMsg, wParam, lParam);
-			return true;
-
-			return CallWindowProc(g_OriginalWndProc, hwnd, uMsg, wParam, lParam);*/
 	}
 
 	DWORD WINAPI Gui::MessageThread(LPVOID)
@@ -232,8 +224,7 @@ namespace SIE
 	{
 		ImGui::CreateContext();
 
-		ImGuiIO& io = ImGui::GetIO();
-		io.MouseDrawCursor = true;
+		ImGui::GetIO().MouseDrawCursor = true;
 
 		ImGui_ImplWin32_Init(window);
 		ImGui_ImplDX11_Init(device, deviceContext);
@@ -241,20 +232,37 @@ namespace SIE
 		IsInitialized = true;
 	}
 
-	LRESULT Gui::HandleInput(HWND Wnd, UINT Msg, WPARAM wParam, LPARAM lParam)
+	void Gui::HandleInput(HWND Wnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	{
-		if (Msg == WM_KEYDOWN)
+		if (Msg == WM_KEYDOWN && wParam == VK_F7)
 		{
-			if (wParam == VK_F7)
+			if (WasEnabled)
 			{
-				IsEnabled = !IsEnabled;
-				if (const auto controlMap = RE::ControlMap::GetSingleton())
+				if (IsEnabled)
 				{
-					controlMap->ignoreKeyboardMouse = IsEnabled;
+					GetCursorPos(&LastCursorPos);
+				}
+				else
+				{
+					SetCursorPos(LastCursorPos.x, LastCursorPos.y);
 				}
 			}
+			IsEnabled = !IsEnabled;
+			if (const auto controlMap = RE::ControlMap::GetSingleton())
+			{
+				controlMap->ignoreKeyboardMouse = IsEnabled;
+			}
+			WasEnabled = true;
 		}
-		return ImGui_ImplWin32_WndProcHandler(Wnd, Msg, wParam, lParam);
+		if (IsEnabled)
+		{
+			ImGui_ImplWin32_WndProcHandler(Wnd, Msg, wParam, lParam);
+			if (Msg == WM_LBUTTONDOWN && !ImGui::GetIO().WantCaptureMouse)
+			{
+				const auto msgPos = GetMessagePos();
+				TargetManager::Instance().TrySetTargetAt(LOWORD(msgPos), HIWORD(msgPos));
+			}
+		}
 	}
 
 	void Gui::BeginFrame()
@@ -290,11 +298,6 @@ namespace SIE
 		ImGui::End();
 
 		MainWindow();
-
-		/*if (const auto controlMap = RE::ControlMap::GetSingleton())
-		{
-			controlMap->ignoreKeyboardMouse = IsEnabled;
-		}*/
 
 		ImGui::Render();
 		ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());

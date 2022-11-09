@@ -137,7 +137,7 @@ namespace SIE
 								{
 									//logger::info("Normals: {}", static_cast<void*>(item->normals->waterMaterial));
 									//item->normals->waterType = extra->water;
-									normalsUpdateFunc(item->normals.get());
+									//normalsUpdateFunc(item->normals.get());
 								}
 								if (item->normals != nullptr)
 								{

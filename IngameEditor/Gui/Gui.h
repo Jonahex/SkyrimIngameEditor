@@ -1,6 +1,13 @@
 #pragma once
 
+#include <RE/N/NiSmartPointer.h>
+
 #include <d3d11.h>
+
+namespace RE
+{
+	class TESObjectREFR;
+}
 
 namespace SIE
 {
@@ -31,7 +38,7 @@ namespace SIE
 
 		static void Initialize(HWND window, ID3D11Device* device,
 			ID3D11DeviceContext* deviceContext);
-		static LRESULT HandleInput(HWND Wnd, UINT Msg, WPARAM wParam, LPARAM lParam);
+		static void HandleInput(HWND Wnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 		static void BeginFrame();
 		static void EndFrame();
 
@@ -48,5 +55,8 @@ namespace SIE
 		static inline bool IsInitialized = false;
 		static inline bool IsEnabled = false;
 		static inline bool IsInFrame = false;
+		static inline bool WasEnabled = false;
+
+		static inline POINT LastCursorPos;
     };
 }

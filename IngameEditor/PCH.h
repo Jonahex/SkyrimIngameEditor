@@ -6,7 +6,6 @@
 #define DLLEXPORT __declspec(dllexport)
 
 namespace logger = SKSE::log;
-namespace string = SKSE::stl::string;
 
 using namespace std::literals;
 
