@@ -7,30 +7,26 @@
 #include <RE/B/BSEffectShaderProperty.h>
 #include <RE/B/BSLightingShaderMaterialBase.h>
 #include <RE/B/BSLightingShaderProperty.h>
+#include <RE/B/BSWaterShaderMaterial.h>
+#include <RE/B/BSWaterShaderProperty.h>
 #include <RE/T/TESObjectREFR.h>
 
 namespace SIE
 {
 	namespace STargetManager
 	{
-		struct LightingHighlightBackup
+		struct HighlightBackup
 		{
 			RE::NiColor emissiveColor;
 			float emissiveMultiple;
 		};
 
-		struct EffectHighlightBackup
-		{
-			RE::NiColorA emissiveColor;
-			float emissiveMultiple;
-		};
-
 		void SetHighlight(RE::NiAVObject* object, bool isEnable)
 		{
-			static std::unordered_map<RE::NiPointer<RE::NiProperty>, LightingHighlightBackup> LightingBackups;
+			static std::unordered_map<RE::NiPointer<RE::NiProperty>, HighlightBackup> PropertyBackups;
 			static std::unordered_map<RE::BSTSmartPointer<RE::BSShaderMaterial>,
 				RE::BSShaderMaterial*>
-				EffectBackups;
+				MaterialBackups;
 
 			if (object == nullptr)
 			{
@@ -56,18 +52,18 @@ namespace SIE
 							static_cast<RE::BSLightingShaderProperty*>(property.get());
 						if (isEnable)
 						{
-							LightingBackups[property] = { *lightingProperty->emissiveColor,
+							PropertyBackups[property] = { *lightingProperty->emissiveColor,
 								lightingProperty->emissiveMult };
 							*lightingProperty->emissiveColor = { 1.f, 0.f, 0.f };
 							lightingProperty->emissiveMult = 10.f;
 						}
-						else if (auto it = LightingBackups.find(property);
-								 it != LightingBackups.cend())
+						else if (auto it = PropertyBackups.find(property);
+								 it != PropertyBackups.cend())
 						{
 							*lightingProperty->emissiveColor = it->second.emissiveColor;
 							lightingProperty->emissiveMult = it->second.emissiveMultiple;
 
-							LightingBackups.erase(it);
+							PropertyBackups.erase(it);
 						}
 					}
 					else if (material->GetType() == RE::BSShaderMaterial::Type::kEffect)
@@ -85,15 +81,43 @@ namespace SIE
 							newMaterial->baseColorScale = 10.f;
 							effectProperty->material = newMaterial.get();
 
-							EffectBackups[newMaterial] = effectMaterial;
+							MaterialBackups[newMaterial] = effectMaterial;
 						}
 						else
 						{
-							if (auto it = EffectBackups.find(RE::BSTSmartPointer(effectMaterial));
-								it != EffectBackups.cend())
+							if (auto it = MaterialBackups.find(RE::BSTSmartPointer(effectMaterial));
+								it != MaterialBackups.cend())
 							{
 								effectProperty->material = it->second;
-								EffectBackups.erase(it);
+								MaterialBackups.erase(it);
+							}
+						}
+					}
+					else if (material->GetType() == RE::BSShaderMaterial::Type::kWater)
+					{
+						const auto waterProperty =
+							static_cast<RE::BSWaterShaderProperty*>(property.get());
+						const auto waterMaterial =
+							static_cast<RE::BSWaterShaderMaterial*>(waterProperty->material);
+						if (isEnable)
+						{
+							const auto newMaterial = RE::BSTSmartPointer(
+								static_cast<RE::BSWaterShaderMaterial*>(waterMaterial->Create()));
+							newMaterial->CopyMembers(waterMaterial);
+							newMaterial->shallowWaterColor = { 1.f, 0.f, 0.f };
+							newMaterial->deepWaterColor = { 1.f, 0.f, 0.f };
+							newMaterial->reflectionColor = { 1.f, 0.f, 0.f };
+							waterProperty->material = newMaterial.get();
+
+							MaterialBackups[newMaterial] = waterMaterial;
+						}
+						else
+						{
+							if (auto it = MaterialBackups.find(RE::BSTSmartPointer(waterMaterial));
+								it != MaterialBackups.cend())
+							{
+								waterProperty->material = it->second;
+								MaterialBackups.erase(it);
 							}
 						}
 					}
