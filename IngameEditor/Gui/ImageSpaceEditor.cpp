@@ -29,53 +29,106 @@ namespace SIE
 					"NoSky 7" } } };
 	}
 
-	void ImageSpaceEditor(const char* label, RE::TESImageSpace& imageSpace)
+	bool ImageSpaceEditor(const char* label, RE::TESImageSpace& imageSpace)
 	{
 		ImGui::PushID(label);
 
+		bool wasEdited = false;
+
 		if (PushingCollapsingHeader("HDR"))
 		{
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Eye Adapt Speed", &imageSpace.data.hdr.eyeAdaptSpeed));
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Eye Adapt Strength", &imageSpace.data.hdr.eyeAdaptStrength));
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Bloom Blur Radius", &imageSpace.data.hdr.bloomBlurRadius));
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Bloom Threshold", &imageSpace.data.hdr.bloomThreshold, 0.1f));
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Bloom Scale", &imageSpace.data.hdr.bloomScale, 0.1f));
-			FormEditor(&imageSpace, ImGui::DragFloat("Receive Bloom Threshold",
-										&imageSpace.data.hdr.receiveBloomThreshold, 0.1f));
-			FormEditor(&imageSpace, ImGui::DragFloat("White", &imageSpace.data.hdr.white, 0.1f));
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Sunlight Scale", &imageSpace.data.hdr.sunlightScale, 0.1f));
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Sky Scale", &imageSpace.data.hdr.skyScale, 0.1f));
+			if (FormEditor(&imageSpace,
+				ImGui::DragFloat("Eye Adapt Speed", &imageSpace.data.hdr.eyeAdaptSpeed)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace,
+				ImGui::DragFloat("Eye Adapt Strength", &imageSpace.data.hdr.eyeAdaptStrength)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace,
+				ImGui::DragFloat("Bloom Blur Radius", &imageSpace.data.hdr.bloomBlurRadius)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace,
+				ImGui::DragFloat("Bloom Threshold", &imageSpace.data.hdr.bloomThreshold, 0.1f)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace,
+				ImGui::DragFloat("Bloom Scale", &imageSpace.data.hdr.bloomScale, 0.1f)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace, ImGui::DragFloat("Receive Bloom Threshold",
+										&imageSpace.data.hdr.receiveBloomThreshold, 0.1f)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace, ImGui::DragFloat("White", &imageSpace.data.hdr.white, 0.1f)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace,
+					ImGui::DragFloat("Sunlight Scale", &imageSpace.data.hdr.sunlightScale, 0.1f)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace,
+					ImGui::DragFloat("Sky Scale", &imageSpace.data.hdr.skyScale, 0.1f)))
+			{
+				wasEdited = true;
+			}
 			ImGui::TreePop();
 		}
 		if (PushingCollapsingHeader("Cinematic"))
 		{
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Saturation", &imageSpace.data.cinematic.saturation, 0.1f));
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Tint Amount", &imageSpace.data.tint.amount, 0.1f));
-			FormEditor(&imageSpace,
-				ImGui::ColorEdit3("Tint Color", &imageSpace.data.tint.color.red));
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Brightness", &imageSpace.data.cinematic.brightness, 0.1f));
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Contrast", &imageSpace.data.cinematic.contrast, 0.1f));
+			if (FormEditor(&imageSpace,
+					ImGui::DragFloat("Saturation", &imageSpace.data.cinematic.saturation, 0.1f)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace,
+					ImGui::DragFloat("Tint Amount", &imageSpace.data.tint.amount, 0.1f)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace,
+					ImGui::ColorEdit3("Tint Color", &imageSpace.data.tint.color.red)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace,
+					ImGui::DragFloat("Brightness", &imageSpace.data.cinematic.brightness, 0.1f)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace,
+					ImGui::DragFloat("Contrast", &imageSpace.data.cinematic.contrast, 0.1f)))
+			{
+				wasEdited = true;
+			}
 			ImGui::TreePop();
 		}
 		if (PushingCollapsingHeader("Depth of Field"))
 		{
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Strength", &imageSpace.data.depthOfField.strength, 0.1f));
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Distance", &imageSpace.data.depthOfField.distance, 50.f));
-			FormEditor(&imageSpace,
-				ImGui::DragFloat("Range", &imageSpace.data.depthOfField.range, 50.f));
+			if (FormEditor(&imageSpace,
+					ImGui::DragFloat("Strength", &imageSpace.data.depthOfField.strength, 0.1f)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace,
+					ImGui::DragFloat("Distance", &imageSpace.data.depthOfField.distance, 50.f)))
+			{
+				wasEdited = true;
+			}
+			if (FormEditor(&imageSpace,
+					ImGui::DragFloat("Range", &imageSpace.data.depthOfField.range, 50.f)))
+			{
+				wasEdited = true;
+			}
 			if (ImGui::BeginCombo("Blur Radius",
 					SImageSpaceEditor::BlurRadiusNames.at(
 						imageSpace.data.depthOfField.skyBlurRadius.get())))
@@ -88,6 +141,7 @@ namespace SIE
 							isSelected))
 					{
 						imageSpace.data.depthOfField.skyBlurRadius = radius;
+						wasEdited = true;
 					}
 				}
 				ImGui::EndCombo();
@@ -96,5 +150,7 @@ namespace SIE
 		}
 
 		ImGui::PopID();
+
+		return wasEdited;
 	}
 }

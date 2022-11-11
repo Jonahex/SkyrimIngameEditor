@@ -1,14 +1,23 @@
 #include "Serialization/Json.h"
 
-#include "RE/B/BGSReferenceEffect.h"
-#include "RE/B/BGSSoundDescriptorForm.h"
-#include "RE/T/TESObjectSTAT.h"
 #include "Serialization/SerializationUtils.h"
 #include "Utils/Engine.h"
 
+#include <RE/B/BGSLightingTemplate.h>
+#include <RE/B/BGSMaterialType.h>
+#include <RE/B/BGSReferenceEffect.h>
 #include <RE/B/BGSShaderParticleGeometryData.h>
+#include <RE/B/BGSSoundDescriptorForm.h>
 #include <RE/B/BGSVolumetricLighting.h>
+#include <RE/E/ExtraCellImageSpace.h>
+#include <RE/E/ExtraCellSkyRegion.h>
+#include <RE/E/ExtraCellWaterType.h>
+#include <RE/S/SpellItem.h>
 #include <RE/T/TESImageSpace.h>
+#include <RE/T/TESObjectCELL.h>
+#include <RE/T/TESObjectSTAT.h>
+#include <RE/T/TESRegion.h>
+#include <RE/T/TESWaterForm.h>
 #include <RE/T/TESWeather.h>
 
 namespace RE
@@ -284,21 +293,168 @@ namespace RE
 		};
 	}
 
+	void to_json(json& j, const BGSLightingTemplate& lightingTemplate)
+	{
+		j = json{
+			{ "AmbientColor", lightingTemplate.data.ambient },
+			{ "DirectionalColor", lightingTemplate.data.directional},
+			{ "FogNearColor", lightingTemplate.data.fogColorNear },
+			{ "FogNear", lightingTemplate.data.fogNear },
+			{ "FogFar", lightingTemplate.data.fogFar },
+			{ "DirectionalRotationXY", lightingTemplate.data.directionalXY },
+			{ "DirectionalRotationZ", lightingTemplate.data.directionalZ },
+			{ "DirectionalFade", lightingTemplate.data.directionalFade },
+			{ "FogClipDistance", lightingTemplate.data.clipDist },
+			{ "FogPower", lightingTemplate.data.fogPower },
+			{ "FogFarColor", lightingTemplate.data.fogColorFar },
+			{ "FogMax", lightingTemplate.data.fogClamp },
+			{ "LightFadeStartDistance", lightingTemplate.data.lightFadeStart },
+			{ "LightFadeEndDistance", lightingTemplate.data.lightFadeEnd },
+			{ "DirectionalAmbientColors", lightingTemplate.directionalAmbientLightingColors },
+		};
+	}
+
+	void to_json(json& j, const INTERIOR_DATA& data)
+	{
+		j = json{
+			{ "AmbientColor", data.ambient },
+			{ "DirectionalColor", data.directional },
+			{ "FogNearColor", data.fogColorNear },
+			{ "FogNear", data.fogNear },
+			{ "FogFar", data.fogFar },
+			{ "DirectionalRotationXY", data.directionalXY },
+			{ "DirectionalRotationZ", data.directionalZ },
+			{ "DirectionalFade", data.directionalFade },
+			{ "FogClipDistance", data.clipDist },
+			{ "FogPower", data.fogPower },
+			{ "FogFarColor", data.fogColorFar },
+			{ "FogMax", data.fogClamp },
+			{ "LightFadeStartDistance", data.lightFadeStart },
+			{ "LightFadeEndDistance", data.lightFadeEnd },
+			{ "AmbientColors", data.directionalAmbientLightingColors },
+			{ "Inherits", data.lightingTemplateInheritanceFlags.get() },
+		};
+	}
+
+	void to_json(json& j, const TESObjectCELL& cell)
+	{
+		const auto imageSpaceExtra = static_cast<const RE::ExtraCellImageSpace*>(
+			cell.extraList.GetByType(ExtraDataType::kCellImageSpace));
+		const auto skyRegionExtra = static_cast<const RE::ExtraCellSkyRegion*>(
+			cell.extraList.GetByType(ExtraDataType::kCellSkyRegion));
+		const auto waterExtra = static_cast<const RE::ExtraCellWaterType*>(
+			cell.extraList.GetByType(ExtraDataType::kCellWaterType));
+
+		j = json{
+			{ "Flags", cell.cellFlags.get() },
+			{ "ImageSpace",
+				SIE::ToFormKey(imageSpaceExtra ? imageSpaceExtra->imageSpace : nullptr) },
+			{ "LightingTemplate", SIE::ToFormKey(cell.lightingTemplate) },
+			{ "SkyAndWeatherFromRegion",
+				SIE::ToFormKey(skyRegionExtra ? skyRegionExtra->skyRegion : nullptr) },
+			{ "Water", SIE::ToFormKey(waterExtra ? waterExtra->water : nullptr) },
+		};
+
+		if (cell.IsInteriorCell())
+		{
+			j.push_back({ { "Lighting", *cell.cellData.interior } });
+		}
+	}
+
+	void to_json(json& j, const NiPoint3& point)
+	{
+		j = json{
+			{ "X", point.x },
+			{ "Y", point.y },
+			{ "Z", point.z },
+		};
+	}
+
+	void to_json(json& j, const TESWaterForm& water)
+	{
+		j = json{
+			{ "AngularVelocity", water.angularVelocity },
+			{ "DamagePerSecond", water.attackDamage },
+			{ "DeepColor", water.data.deepWaterColor },
+			{ "DepthNormals", water.data.depthProperties.normals },
+			{ "DepthReflections", water.data.depthProperties.reflections },
+			{ "DepthRefraction", water.data.depthProperties.refraction },
+			{ "DepthSpecularLighting", water.data.depthProperties.specularLighting },
+			{ "DisplacementDampner", water.data.displacementDampener },
+			{ "DisplacementFalloff", water.data.displacementFalloff },
+			{ "DisplacementFoce", water.data.displacementForce },
+			{ "DisplacementStartingSize", water.data.displacementSize },
+			{ "DisplacementVelocity", water.data.displacementVelocity },
+			{ "Flags", water.flags.get() },
+			{ "FlowNormalsNoiseTexture", water.noiseTextures[3].textureName },
+			{ "FogAboveWaterAmount", water.data.aboveWaterFogAmount },
+			{ "FogAboveWaterDistanceFarPlane", water.data.aboveWaterFogDistFar },
+			{ "FogAboveWaterDistanceNearPlane", water.data.aboveWaterFogDistNear },
+			{ "FogUnderWaterAmount", water.data.underwaterFogAmount },
+			{ "FogUnderWaterDistanceFarPlane", water.data.underwaterFogDistFar },
+			{ "FogUnderWaterDistanceNearPlane", water.data.underwaterFogDistNear },
+			{ "ImageSpace", SIE::ToFormKey(water.imageSpace) },
+			{ "LinearVelocity", water.linearVelocity },
+			{ "Material", SIE::ToFormKey(water.materialType) },
+			{ "NoiseFalloff", water.data.noiseFalloff },
+			{ "NoiseLayerOneAmplitudeScale", water.data.amplitudeA[0] },
+			{ "NoiseLayerOneTexture", water.noiseTextures[0].textureName },
+			{ "NoiseLayerOneUvScale", water.data.uvScaleA[0] },
+			{ "NoiseLayerOneWindDirection", water.data.noiseWindDirectionA[0] },
+			{ "NoiseLayerOneWindSpeed", water.data.noiseWindSpeedA[0] },
+			{ "NoiseLayerThreeAmplitudeScale", water.data.amplitudeA[2] },
+			{ "NoiseLayerThreeTexture", water.noiseTextures[2].textureName },
+			{ "NoiseLayerThreeUvScale", water.data.uvScaleA[2] },
+			{ "NoiseLayerThreeWindDirection", water.data.noiseWindDirectionA[2] },
+			{ "NoiseLayerThreeWindSpeed", water.data.noiseWindSpeedA[2] },
+			{ "NoiseLayerTwoAmplitudeScale", water.data.amplitudeA[1] },
+			{ "NoiseLayerTwoTexture", water.noiseTextures[1].textureName },
+			{ "NoiseLayerTwoUvScale", water.data.uvScaleA[1] },
+			{ "NoiseLayerTwoWindDirection", water.data.noiseWindDirectionA[1] },
+			{ "NoiseLayerTwoWindSpeed", water.data.noiseWindSpeedA[1] },
+			{ "Opacity", water.alpha },
+			{ "OpenSound", SIE::ToFormKey(water.waterSound) },
+			{ "ReflectionColor", water.data.reflectionWaterColor },
+			{ "ShallowColor", water.data.shallowWaterColor },
+			{ "SpecularBrightness", water.data.specularBrightness },
+			{ "SpecularPower", water.data.specularPower },
+			{ "SpecularRadius", water.data.specularRadius },
+			{ "SpecularSunPower", water.data.sunSpecularPower },
+			{ "SpecularSunSparkleMagnitude", water.data.sunSparkleMagnitude },
+			{ "SpecularSunSparklePower", water.data.sunSparklePower },
+			{ "SpecularSunSpecularMagnitude", water.data.sunSpecularMagnitude },
+			{ "Spell", SIE::ToFormKey(water.contactSpell) },
+			{ "WaterFresnel", water.data.fresnelAmount },
+			{ "WaterReflectionMagnitude", water.data.reflectionMagnitude },
+			{ "WaterReflectivity", water.data.reflectionAmount },
+			{ "WaterRefractionMagnitude", water.data.refractionMagnitude },
+		};
+	}
+
 	void to_json(json& j, const TESForm& form)
 	{
 		switch (form.GetFormType())
 		{
-		case FormType::Weather:
-			to_json(j, static_cast<const TESWeather&>(form));
+		case FormType::Cell:
+			to_json(j, static_cast<const TESObjectCELL&>(form));
 			break;
 		case FormType::ImageSpace:
 			to_json(j, static_cast<const TESImageSpace&>(form));
 			break;
-		case FormType::VolumetricLighting:
-			to_json(j, static_cast<const BGSVolumetricLighting&>(form));
+		case FormType::LightingMaster:
+			to_json(j, static_cast<const BGSLightingTemplate&>(form));
 			break;
 		case FormType::ShaderParticleGeometryData:
 			to_json(j, static_cast<const BGSShaderParticleGeometryData&>(form));
+			break;
+		case FormType::VolumetricLighting:
+			to_json(j, static_cast<const BGSVolumetricLighting&>(form));
+			break;
+		case FormType::Water:
+			to_json(j, static_cast<const TESWaterForm&>(form));
+			break;
+		case FormType::Weather:
+			to_json(j, static_cast<const TESWeather&>(form));
 			break;
 		}
 	}

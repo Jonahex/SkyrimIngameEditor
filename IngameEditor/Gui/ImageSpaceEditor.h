@@ -2,5 +2,5 @@
 
 namespace SIE
 {
-	void ImageSpaceEditor(const char* label, RE::TESImageSpace& imageSpace);
+	bool ImageSpaceEditor(const char* label, RE::TESImageSpace& imageSpace);
 }

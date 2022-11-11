@@ -4,12 +4,21 @@
 #include "Serialization/Json.h"
 #include "Utils/Engine.h"
 
+#include <RE/B/BGSLightingTemplate.h>
+#include <RE/B/BGSMaterialType.h>
 #include <RE/B/BGSShaderParticleGeometryData.h>
 #include <RE/B/BGSSoundDescriptorForm.h>
 #include <RE/B/BGSVolumetricLighting.h>
+#include <RE/E/ExtraCellImageSpace.h>
+#include <RE/E/ExtraCellSkyRegion.h>
+#include <RE/E/ExtraCellWaterType.h>
+#include <RE/S/SpellItem.h>
 #include <RE/T/TESDataHandler.h>
 #include <RE/T/TESImageSpace.h>
+#include <RE/T/TESObjectCELL.h>
 #include <RE/T/TESObjectSTAT.h>
+#include <RE/T/TESRegion.h>
+#include <RE/T/TESWaterForm.h>
 #include <RE/T/TESWeather.h>
 
 #include <nlohmann/json.hpp>
@@ -80,10 +89,70 @@ namespace SIE
 			return result;
 		}
 
+		std::unordered_set<std::string> CollectReferences(const RE::TESObjectCELL& cell)
+		{
+			std::unordered_set<std::string> result;
+			if (const auto imageSpaceExtra = static_cast<const RE::ExtraCellImageSpace*>(
+					cell.extraList.GetByType(RE::ExtraDataType::kCellImageSpace)))
+			{
+				if (imageSpaceExtra->imageSpace != nullptr)
+				{
+					result.insert(imageSpaceExtra->imageSpace->GetFile()->fileName);
+				}
+			}
+			if (const auto skyRegionExtra = static_cast<const RE::ExtraCellSkyRegion*>(
+					cell.extraList.GetByType(RE::ExtraDataType::kCellSkyRegion)))
+			{
+				if (skyRegionExtra->skyRegion != nullptr)
+				{
+					result.insert(skyRegionExtra->skyRegion->GetFile()->fileName);
+				}
+			}
+			if (const auto waterExtra = static_cast<const RE::ExtraCellWaterType*>(
+					cell.extraList.GetByType(RE::ExtraDataType::kCellWaterType)))
+			{
+				if (waterExtra->water != nullptr)
+				{
+					result.insert(waterExtra->water->GetFile()->fileName);
+				}
+			}
+			if (cell.lightingTemplate != nullptr)
+			{
+				result.insert(cell.lightingTemplate->GetFile()->fileName);
+			}
+			return result;
+		}
+
+		std::unordered_set<std::string> CollectReferences(const RE::TESWaterForm& water)
+		{
+			std::unordered_set<std::string> result;
+			if (water.imageSpace != nullptr)
+			{
+				result.insert(water.imageSpace->GetFile()->fileName);
+			}
+			if (water.materialType != nullptr)
+			{
+				result.insert(water.materialType->GetFile()->fileName);
+			}
+			if (water.waterSound != nullptr)
+			{
+				result.insert(water.waterSound->GetFile()->fileName);
+			}
+			if (water.contactSpell != nullptr)
+			{
+				result.insert(water.contactSpell->GetFile()->fileName);
+			}
+			return result;
+		}
+
 		std::unordered_set<std::string> CollectReferences(const RE::TESForm& form)
 		{
 			switch (form.formType.get())
 			{
+			case RE::FormType::Cell:
+				return CollectReferences(static_cast<const RE::TESObjectCELL&>(form));
+			case RE::FormType::Water:
+				return CollectReferences(static_cast<const RE::TESWaterForm&>(form));
 			case RE::FormType::Weather:
 				return CollectReferences(static_cast<const RE::TESWeather&>(form));
 			}

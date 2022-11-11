@@ -1,5 +1,6 @@
 #include "Gui/WeatherEditor.h"
 
+#include "Gui/DirectionalAmbientLightingColorsEditor.h"
 #include "Gui/ImageSpaceEditor.h"
 #include "Gui/ShaderParticleEditor.h"
 #include "Gui/Utils.h"
@@ -360,23 +361,8 @@ namespace SIE
 				if (PushingCollapsingHeader(ColorTimeNames[colorTime]))
 				{
 					ResetTimeButton(static_cast<RE::TESWeather::ColorTimes::ColorTime>(colorTime));
-					nonResetEditor(ColorEdit("X Min",
-							weather.directionalAmbientLightingColors[colorTime].directional.x.min));
-					nonResetEditor(ColorEdit("X Max",
-							weather.directionalAmbientLightingColors[colorTime].directional.x.max));
-					nonResetEditor(ColorEdit("Y Min",
-							weather.directionalAmbientLightingColors[colorTime].directional.y.min));
-					nonResetEditor(ColorEdit("Y Max",
-							weather.directionalAmbientLightingColors[colorTime].directional.y.max));
-					nonResetEditor(ColorEdit("Z Min",
-							weather.directionalAmbientLightingColors[colorTime].directional.z.min));
-					nonResetEditor(ColorEdit("Z Max",
-							weather.directionalAmbientLightingColors[colorTime].directional.z.max));
-					nonResetEditor(ColorEdit("Specular",
-							weather.directionalAmbientLightingColors[colorTime].specular));
-					nonResetEditor(ImGui::DragFloat("Fresnel Power",
-							&weather.directionalAmbientLightingColors[colorTime].fresnelPower,
-							0.1f));
+					nonResetEditor(DirectionalAmbientLightingColorsEditor("##DALC",
+						weather.directionalAmbientLightingColors[colorTime]));
 					ImGui::TreePop();
 				}
 			}

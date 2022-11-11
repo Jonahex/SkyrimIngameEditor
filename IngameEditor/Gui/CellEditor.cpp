@@ -1,21 +1,27 @@
 #include "Gui/CellEditor.h"
 
+#include "Gui/DirectionalAmbientLightingColorsEditor.h"
 #include "Gui/ImageSpaceEditor.h"
+#include "Gui/LightingTemplateEditor.h"
 #include "Gui/Utils.h"
 #include "Gui/WaterEditor.h"
 #include "Utils/Engine.h"
 
+#include <RE/B/BGSLightingTemplate.h>
 #include <RE/B/BSTriShape.h>
 #include <RE/B/BSWaterShaderMaterial.h>
 #include <RE/B/BSWaterShaderProperty.h>
 #include <RE/E/ExtraCellImageSpace.h>
+#include <RE/E/ExtraCellSkyRegion.h>
 #include <RE/E/ExtraCellWaterType.h>
 #include <RE/N/NiAVObject.h>
 #include <RE/N/NiRTTI.h>
 #include <RE/N/NiSourceTexture.h>
+#include <RE/S/Sky.h>
 #include <RE/T/TESImageSpace.h>
 #include <RE/T/TESObjectACTI.h>
 #include <RE/T/TESObjectCELL.h>
+#include <RE/T/TESRegion.h>
 #include <RE/T/TESWaterDisplacement.h>
 #include <RE/T/TESWaterForm.h>
 #include <RE/T/TESWaterNormals.h>
@@ -33,26 +39,13 @@ namespace SIE
 		{
 			if (geometry != nullptr)
 			{
-				/*logger::info("{} {}", static_cast<void*>(geometry), geometry->GetRTTI()->GetName());*/
 				if (auto triShape = geometry->AsGeometry())
 				{
 					auto property = triShape->properties[1].get();
-					/*logger::info("{} {}", static_cast<void*>(property),
-						property->GetRTTI()->GetName());*/
 					auto waterProperty = static_cast<RE::BSWaterShaderProperty*>(property);
 					auto waterMaterial =
 						static_cast<RE::BSWaterShaderMaterial*>(waterProperty->material);
 					waterType->FillMaterial(*waterMaterial);
-					//waterProperty->alpha = waterMaterial->alpha;
-
-					/*logger::info("ProcessGeometry: {} {}", static_cast<void*>(triShape),
-						static_cast<void*>(waterMaterial));*/
-
-					/*const REL::Relocation<void (*)(RE::BSWaterShaderProperty*,
-						RE::BSWaterShaderMaterial*, bool)>
-						func{ REL::ID(
-						105544) };
-					func(waterProperty, waterMaterial, false);*/
 				}
 				else if (auto node = geometry->AsNode())
 				{
@@ -69,13 +62,216 @@ namespace SIE
 	{
 		ImGui::PushID(label);
 
-		if (const auto extra = static_cast<RE::ExtraCellImageSpace*>(
-				cell.extraList.GetByType(RE::ExtraDataType::kCellImageSpace)))
+		RE::TESImageSpace* imageSpace = nullptr;
+		auto extraImageSpace = static_cast<RE::ExtraCellImageSpace*>(
+			cell.extraList.GetByType(RE::ExtraDataType::kCellImageSpace));
+		if (extraImageSpace != nullptr)
 		{
-			if (PushingCollapsingHeader("Imagespace"))
+			imageSpace = extraImageSpace->imageSpace;
+		}
+		if (PushingCollapsingHeader("Imagespace"))
+		{
+			if (FormEditor(&cell, FormSelector<true>("Imagespace", imageSpace)))
 			{
-				FormEditor(&cell, FormSelector<true>("Imagespace", extra->imageSpace));
-				ImageSpaceEditor("ImageSpaceEditor", *extra->imageSpace);
+				if (imageSpace != nullptr)
+				{
+					if (extraImageSpace != nullptr)
+					{
+						extraImageSpace->imageSpace = imageSpace;
+					}
+					else
+					{
+						extraImageSpace = new RE::ExtraCellImageSpace;
+						extraImageSpace->imageSpace = imageSpace;
+						cell.extraList.Add(extraImageSpace);
+					}
+
+					static REL::Relocation<void (*)(void*, const RE::ImageSpaceBaseData&)>
+						imageSpaceUpdate{ REL::ID(105683) };
+					static REL::Relocation<void**> imageSpaceEffectManager{ REL::ID(414660) };
+
+					imageSpaceUpdate(*imageSpaceEffectManager, imageSpace->data);
+				}
+				else if (extraImageSpace != nullptr)
+				{
+					cell.extraList.Remove(extraImageSpace);
+				}
+			}
+			if (imageSpace != nullptr)
+			{
+				ImageSpaceEditor("ImageSpaceEditor", *imageSpace);
+			}
+			ImGui::TreePop();
+		}
+
+		if (cell.IsInteriorCell())
+		{
+			const auto data = cell.cellData.interior;
+
+			if (PushingCollapsingHeader("Lighting"))
+			{
+				using enum RE::INTERIOR_DATA::Inherit;
+
+				if (PushingCollapsingHeader("Lighting Template"))
+				{
+					FormEditor(&cell,
+						FormSelector<true>("Lighting Template", cell.lightingTemplate));
+					if (cell.lightingTemplate != nullptr)
+					{
+						LightingTemplateEditor("##LightingTemplateEditor", *cell.lightingTemplate);
+					}
+					ImGui::TreePop();
+				}
+				if (PushingCollapsingHeader("Inherit"))
+				{
+					if (ImGui::BeginTable("InheritFlags", 4))
+					{
+						ImGui::TableNextRow();
+						ImGui::TableNextColumn();
+						FormEditor(&cell,
+							FlagEdit("Ambient Color", data->lightingTemplateInheritanceFlags,
+								kAmbientColor));
+						ImGui::TableNextColumn();
+						FormEditor(&cell,
+							FlagEdit("Directional Color", data->lightingTemplateInheritanceFlags,
+								kDirectionalColor));
+						ImGui::TableNextColumn();
+						FormEditor(&cell,
+							FlagEdit("Direcitonal Rotation", data->lightingTemplateInheritanceFlags,
+								kDirectionalRotation));
+						ImGui::TableNextColumn();
+						FormEditor(&cell,
+							FlagEdit("Directional Fade", data->lightingTemplateInheritanceFlags,
+								kDirectionalFade));
+						ImGui::TableNextRow();
+						ImGui::TableNextColumn();
+						FormEditor(&cell, FlagEdit("Fog Color",
+											  data->lightingTemplateInheritanceFlags, kFogColor));
+						ImGui::TableNextColumn();
+						FormEditor(&cell,
+							FlagEdit("Fog Near", data->lightingTemplateInheritanceFlags, kFogNear));
+						ImGui::TableNextColumn();
+						FormEditor(&cell,
+							FlagEdit("Fog Far", data->lightingTemplateInheritanceFlags, kFogFar));
+						ImGui::TableNextColumn();
+						FormEditor(&cell, FlagEdit("Fog Power",
+											  data->lightingTemplateInheritanceFlags, kFogPower));
+						ImGui::TableNextRow();
+						ImGui::TableNextColumn();
+						FormEditor(&cell,
+							FlagEdit("Fog Max", data->lightingTemplateInheritanceFlags, kFogMax));
+						ImGui::TableNextColumn();
+						FormEditor(&cell,
+							FlagEdit("Clip Distance", data->lightingTemplateInheritanceFlags,
+								kClipDistance));
+						ImGui::TableNextColumn();
+						FormEditor(&cell,
+							FlagEdit("Light Fade Distances", data->lightingTemplateInheritanceFlags,
+								kLightFadeDistances));
+						ImGui::EndTable();
+					}
+					ImGui::TreePop();
+				}
+				if (!data->lightingTemplateInheritanceFlags.all(kAmbientColor))
+				{
+					if (PushingCollapsingHeader("Ambient"))
+					{
+						FormEditor(&cell, ColorEdit("Ambient Color", data->ambient));
+						FormEditor(&cell, DirectionalAmbientLightingColorsEditor("##DALC",
+											  data->directionalAmbientLightingColors));
+						ImGui::TreePop();
+					}
+				}
+				if (!data->lightingTemplateInheritanceFlags.all(kFogColor, kFogNear, kFogFar,
+						kFogPower, kFogMax, kClipDistance))
+				{
+					if (PushingCollapsingHeader("Fog"))
+					{
+						if (data->lightingTemplateInheritanceFlags.none(kFogColor))
+						{
+							FormEditor(&cell, ColorEdit("Near Color", data->fogColorNear));
+							FormEditor(&cell, ColorEdit("Far Color", data->fogColorFar));
+						}
+						if (data->lightingTemplateInheritanceFlags.none(kFogNear))
+						{
+							FormEditor(&cell, ImGui::DragFloat("Near", &data->fogNear, 50.f));
+						}
+						if (data->lightingTemplateInheritanceFlags.none(kFogFar))
+						{
+							FormEditor(&cell, ImGui::DragFloat("Far", &data->fogFar, 50.f));
+						}
+						if (data->lightingTemplateInheritanceFlags.none(kFogPower))
+						{
+							FormEditor(&cell, ImGui::DragFloat("Power", &data->fogPower, 0.1f));
+						}
+						if (data->lightingTemplateInheritanceFlags.none(kFogMax))
+						{
+							FormEditor(&cell, ImGui::DragFloat("Max", &data->fogClamp, 0.1f));
+						}
+						if (data->lightingTemplateInheritanceFlags.none(kClipDistance))
+						{
+							FormEditor(&cell,
+								ImGui::DragFloat("Clip Distance", &data->clipDist, 50.f));
+						}
+						ImGui::TreePop();
+					}
+				}
+				if (!data->lightingTemplateInheritanceFlags.all(kDirectionalColor,
+						kDirectionalRotation, kDirectionalFade))
+				{
+					if (PushingCollapsingHeader("Directional"))
+					{
+						if (data->lightingTemplateInheritanceFlags.none(kDirectionalColor))
+						{
+							FormEditor(&cell, ColorEdit("Color", data->directional));
+						}
+						if (data->lightingTemplateInheritanceFlags.none(kDirectionalRotation))
+						{
+							FormEditor(&cell, ImGui::DragScalarN("Rotation", ImGuiDataType_U32,
+												  &data->directionalXY, 2, 10.f));
+						}
+						if (data->lightingTemplateInheritanceFlags.none(kDirectionalFade))
+						{
+							FormEditor(&cell,
+								ImGui::DragFloat("Fade", &data->directionalFade, 0.1f));
+						}
+						ImGui::TreePop();
+					}
+				}
+				if (data->lightingTemplateInheritanceFlags.none(kLightFadeDistances))
+				{
+					FormEditor(&cell, ImGui::DragFloat2("Light Fade Distances", &data->lightFadeStart, 50.f));
+				}
+
+				const auto sky = RE::Sky::GetSingleton();
+
+				if (FormEditor(&cell,
+					FlagEdit("Show Sky", cell.cellFlags, RE::TESObjectCELL::Flag::kShowSky)))
+				{
+					if (cell.cellFlags.any(RE::TESObjectCELL::Flag::kShowSky))
+					{
+						cell.extraList.Add(new RE::ExtraCellSkyRegion);
+					}
+					else
+					{
+						cell.extraList.Remove(cell.extraList.GetByType(RE::ExtraDataType::kCellSkyRegion));
+					}
+					sky->ResetWeather();
+				}
+				if (cell.cellFlags.any(RE::TESObjectCELL::Flag::kShowSky))
+				{
+					auto extraData = static_cast<RE::ExtraCellSkyRegion*>(
+						cell.extraList.GetByType(RE::ExtraDataType::kCellSkyRegion));
+					if (FormEditor(&cell, FormSelector<true>("Region", extraData->skyRegion)))
+					{
+						sky->ResetWeather();
+					}
+					if (FormEditor(&cell,
+						FlagEdit("Use Sky Lighting", cell.cellFlags, RE::TESObjectCELL::Flag::kUseSkyLighting)))
+					{
+						sky->ResetWeather();
+					}
+				}
 				ImGui::TreePop();
 			}
 		}
@@ -92,21 +288,7 @@ namespace SIE
 						WaterEditor("WaterEditor", *extra->water);
 						ImGui::TreePop();
 
-						const REL::Relocation<bool (*)(RE::TESObjectREFR*)> loadFunc{ RELOCATION_ID(
-							19409, 19837) };
-						const REL::Relocation<bool (*)(RE::TESObjectREFR*)> unloadFunc{
-							RELOCATION_ID(19410, 19838)
-						};
-						const REL::Relocation<void (*)(RE::TESWaterNormals*)> normalsUpdateFunc{
-							REL::ID(32170)
-						};
-						const REL::Relocation<void (*)(RE::TESWaterReflections*)> reflectionsUpdateFunc{
-							REL::ID(32160)
-						};
-
 						auto waterSystem = RE::TESWaterSystem::GetSingleton();
-
-						logger::info("{}", static_cast<void*>(extra->water->waterShaderMaterial));
 
 						for (const auto& item : cell.references) 
 						{
@@ -115,69 +297,11 @@ namespace SIE
 								auto activator = static_cast<RE::TESObjectACTI*>(item->GetBaseObject());
 								activator->waterForm = extra->water;
 
-								/*unloadFunc(item.get());
-								loadFunc(item.get());*/
-
 								auto geometry = item->Get3D2();
 								SCellEditor::ProcessGeometry(geometry,
 									item->GetBaseObject()->GetWaterType());
-
-								/*RE::NiUpdateData updateData{ 0.f, RE::NiUpdateData::Flag::kNone };
-								geometry->Update(updateData);*/
 							}
 						}
-
-						for (const auto& item : waterSystem->waterObjects)
-						{
-							if (item->waterType == extra->water)
-							{
-								//logger::info("Water object: {}", static_cast<void*>(item.get()));
-								/*SCellEditor::ProcessGeometry(item->shape.get(), extra->water);*/
-								if (item->normals != nullptr)
-								{
-									//logger::info("Normals: {}", static_cast<void*>(item->normals->waterMaterial));
-									//item->normals->waterType = extra->water;
-									//normalsUpdateFunc(item->normals.get());
-								}
-								if (item->normals != nullptr)
-								{
-									/*logger::info("Reflections: {}",
-										static_cast<void*>(item->reflections->waterMaterial));*/
-								}
-								if (item->displacement != nullptr)
-								{
-									/*logger::info("Displacement: {}",
-										static_cast<void*>(
-											item->displacement->displacementGeometry.get()));*/
-									/*SCellEditor::ProcessGeometry(
-										item->displacement->displacementGeometry.get(),
-										extra->water);*/
-								}
-								if (item->waterRippleObject != nullptr)
-								{
-									/*logger::info("Ripple: {}",
-										static_cast<void*>(
-											item->waterRippleObject.get()));*/
-									/*SCellEditor::ProcessGeometry(item->waterRippleObject.get(),
-										extra->water);*/
-								}
-							}
-						}
-
-						/*for (auto it = cell.references.begin(); it != cell.references.end(); ++it)
-						{
-							if ((*it)->IsWater())
-							{
-								unloadFunc(it->get());
-								(*it)->DeleteThis();
-								it = cell.references.erase(it);
-							}
-						}
-
-						using func_t = void (*)(void*, RE::TESObjectCELL*, bool);
-						const REL::Relocation<func_t> func{ RELOCATION_ID(31230, 32030) };
-						const REL::Relocation<void**> singleton{ RELOCATION_ID(514289, 400449) };
-						func(*singleton.get(), &cell, false);*/
 					}
 				}
 			}

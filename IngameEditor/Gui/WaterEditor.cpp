@@ -119,8 +119,6 @@ namespace SIE
 			FormEditor(&water, ImGui::SliderFloat("Specular Brightness",
 								   &water.data.specularBrightness, 0.f, 100.f));
 			FormEditor(&water, ImGui::SliderFloat("Specular Power", &water.data.specularPower, 0.f, 10000.f));
-			FormEditor(&water,
-				ImGui::SliderFloat("UnkA0", &water.data.unkA0, 0.f, 100.f));
 			ImGui::TreePop();
 		}
 

@@ -897,7 +897,15 @@ namespace Hooks
 			stl::write_vfunc<BehaviorGraph::TESForm_GetFormEditorID>(RE::VTABLE_SpellItem[0]);
 			stl::write_vfunc<BehaviorGraph::TESForm_SetFormEditorID>(RE::VTABLE_SpellItem[0]);
 
-			stl::write_vfunc<BehaviorGraph::TESWaterObject_dtor>(RE::VTABLE_TESWaterObject[0]);
+			stl::write_vfunc<BehaviorGraph::TESForm_GetFormEditorID>(RE::VTABLE_BGSLightingTemplate[0]);
+			stl::write_vfunc<BehaviorGraph::TESForm_SetFormEditorID>(
+				RE::VTABLE_BGSLightingTemplate[0]);
+
+			stl::write_vfunc<BehaviorGraph::TESForm_GetFormEditorID>(
+				RE::VTABLE_TESRegion[0]);
+			stl::write_vfunc<BehaviorGraph::TESForm_SetFormEditorID>(RE::VTABLE_TESRegion[0]);
+
+			//stl::write_vfunc<BehaviorGraph::TESWaterObject_dtor>(RE::VTABLE_TESWaterObject[0]);
 
 			//stl::write_vfunc<BehaviorGraph::TestHook>(RE::VTABLE_BSWaterShader[0]);
 
