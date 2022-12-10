@@ -10,12 +10,15 @@
 #define FTS_FUZZY_MATCH_IMPLEMENTATION
 #include "3rdparty/fts_fuzzy_match.h"
 
+#include <RE/A/AnimationSetDataSingleton.h>
 #include <RE/B/BSAnimationGraphManager.h>
 #include <RE/B/BShkbAnimationGraph.h>
 #include <RE/H/hkbBehaviorGraph.h>
 #include <RE/H/hkbBehaviorGraphData.h>
+#include <RE/H/hkbSymbolIdMap.h>
 #include <RE/H/hkbVariableInfo.h>
 #include <RE/H/hkbVariableValueSet.h>
+#include <RE/H/hkClass.h>
 #include <RE/T/TESObjectACTI.h>
 #include <RE/T/TESWaterForm.h>
 
@@ -24,6 +27,121 @@
 
 namespace SIE
 {
+	namespace STargetEditor
+	{
+		void AnimationSetDataViewer(const RE::BSAnimationGraphManager& graphManager)
+		{ 
+			const auto& activeGraph = graphManager.graphs[graphManager.activeGraph];
+			const auto& projectName = activeGraph->projectName;
+			const auto sets = RE::AnimationSetDataSingleton::GetSingleton();
+			for (const auto& [name, sets] : sets->projects)
+			{
+				if (PushingCollapsingHeader(name.c_str()))
+				{
+					uint32_t setIndex = 0;
+					for (const auto& set : *sets)
+					{
+						if (PushingCollapsingHeader(std::to_string(setIndex).c_str()))
+						{
+							if (PushingCollapsingHeader("Events"))
+							{
+								for (const auto& event : set.events)
+								{
+									ImGui::Text(event.c_str());
+								}
+								ImGui::TreePop();
+							}
+							if (PushingCollapsingHeader("Variables"))
+							{
+								for (const auto& variable : set.variables)
+								{
+									ImGui::Text(std::format("{}: [{}, {}]",
+										variable.variable.c_str(), variable.min, variable.max)
+													.c_str());
+								}
+								ImGui::TreePop();
+							}
+							if (PushingCollapsingHeader("Attacks"))
+							{
+								for (const auto& attack : set.attacks)
+								{
+									if (PushingCollapsingHeader(std::format("{}: {}", attack.eventName.c_str(), attack.unk10).c_str()))
+									{
+										if (attack.clipNames != nullptr)
+										{
+											for (const auto& clip : *attack.clipNames)
+											{
+												ImGui::Text(clip.c_str());
+											}
+										}
+										ImGui::TreePop();
+									}
+								}
+								ImGui::TreePop();
+							}
+							if (PushingCollapsingHeader("Hashes"))
+							{
+								for (uint32_t folderIndex = 0;
+									 folderIndex < set.hashes.folderHashes.size(); ++folderIndex)
+								{
+									if (PushingCollapsingHeader(
+											std::to_string(set.hashes.folderHashes[folderIndex])
+												.c_str()))
+									{
+										for (const auto& nameHash :
+											set.hashes.nameHashes[folderIndex])
+										{
+											ImGui::Text(std::to_string(nameHash).c_str());
+										}
+										ImGui::TreePop();
+									}
+								}
+								ImGui::TreePop();
+							}
+							ImGui::TreePop();
+						}
+						++setIndex;
+					}
+					ImGui::TreePop();
+				}
+			}
+		}
+
+		void PrintClassName(const RE::hkRefVariant& variant, const std::string_view& name)
+		{ 
+			if (variant != nullptr)
+			{
+				if (auto cl = variant->GetClassType())
+				{
+					logger::info("{}: {}", name, cl->m_name);
+				}
+			}
+		}
+
+		void GraphViewer(const RE::BSAnimationGraphManager& graphManager) 
+		{
+			const auto& activeGraph = graphManager.graphs[graphManager.activeGraph];
+			ImGui::Text(activeGraph->behaviorGraph->name.c_str());
+			if (PushingCollapsingHeader("Active Nodes"))
+			{
+				const auto graph = activeGraph->behaviorGraph;
+				if (graph->activeNodeTemplateToIndexMap != nullptr)
+				{
+					auto it = graph->activeNodeTemplateToIndexMap->getIterator();
+					while (graph->activeNodeTemplateToIndexMap->isValid(it))
+					{
+						const auto& key = graph->activeNodeTemplateToIndexMap->getKey(it);
+						const auto& value = graph->activeNodeTemplateToIndexMap->getValue(it);
+						ImGui::Text(std::format("{} {}", key->name.c_str(), value)
+										.c_str());
+						it = graph->activeNodeTemplateToIndexMap->getNext(it);
+					}
+				}
+				ImGui::TreePop();
+			}
+		}
+	}
+
 	void TargetEditor(const char* label)
     {
 		ImGui::PushID(label);
@@ -128,7 +246,19 @@ namespace SIE
 							FormSelector<false>("Water Type", activator->waterForm));
 						if (activator->waterForm != nullptr)
 						{
-							WaterEditor("WaterEditor", *activator->waterForm);
+							if (WaterEditor("WaterEditor", *activator->waterForm))
+							{
+								//auto geometry = target->Get3D2();
+								//UpdateWaterGeometry(geometry, activator->waterForm);
+
+								REL::Relocation<void(RE::TESObjectREFR*)> loadFunc{ REL::ID(
+									19837) };
+								REL::Relocation<void(RE::TESObjectREFR*)> unloadFunc{ REL::ID(
+									19838) };
+
+								unloadFunc(target);
+								loadFunc(target);
+							}
 						}
 						ImGui::TreePop();
 					}
@@ -219,7 +349,7 @@ namespace SIE
 								ImGui::TableNextColumn();
 								ImGui::Text(name.c_str());
 								ImGui::TableNextColumn();
-								if (ImGui::Button("Send"))
+								if (ImGui::Button(("Send##" + name).c_str()))
 								{
 									target->NotifyAnimationGraph(name.c_str());
 								}
@@ -265,6 +395,18 @@ namespace SIE
 							ImGui::ListBoxFooter();
 						}
 
+						ImGui::TreePop();
+					}
+
+					if (PushingCollapsingHeader("Animation Sets"))
+					{
+						STargetEditor::AnimationSetDataViewer(*manager);
+						ImGui::TreePop();
+					}
+
+					if (PushingCollapsingHeader("Graph"))
+					{
+						STargetEditor::GraphViewer(*manager);
 						ImGui::TreePop();
 					}
 

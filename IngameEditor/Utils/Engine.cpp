@@ -1,8 +1,12 @@
 #include "Utils/Engine.h"
 
+#include <RE/B/BSTriShape.h>
+#include <RE/B/BSWaterShaderMaterial.h>
+#include <RE/B/BSWaterShaderProperty.h>
 #include <RE/T/TES.h>
 #include <RE/T/TESDataHandler.h>
 #include <RE/T/TESGlobal.h>
+#include <RE/T/TESWaterForm.h>
 #include <RE/T/TESWaterSystem.h>
 
 #include <magic_enum.hpp>
@@ -75,6 +79,28 @@ namespace SIE
 		if (visibility == RE::VISIBILITY::kWater)
 		{
 			RE::TESWaterSystem::GetSingleton()->SetVisibility(isVisible, false, false);
+		}
+	}
+
+	void UpdateWaterGeometry(RE::NiAVObject* geometry, RE::TESWaterForm* waterType)
+	{
+		if (geometry != nullptr)
+		{
+			if (auto triShape = geometry->AsGeometry())
+			{
+				auto property = triShape->properties[1].get();
+				auto waterProperty = static_cast<RE::BSWaterShaderProperty*>(property);
+				auto waterMaterial =
+					static_cast<RE::BSWaterShaderMaterial*>(waterProperty->material);
+				waterType->FillMaterial(*waterMaterial);
+			}
+			else if (auto node = geometry->AsNode())
+			{
+				for (const auto& child : node->children)
+				{
+					UpdateWaterGeometry(child.get(), waterType);
+				}
+			}
 		}
 	}
 }

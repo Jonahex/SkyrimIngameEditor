@@ -13,6 +13,7 @@
 #include <RE/B/BSWaterShaderProperty.h>
 #include <RE/E/ExtraCellImageSpace.h>
 #include <RE/E/ExtraCellSkyRegion.h>
+#include <RE/E/ExtraCellWaterEnvMap.h>
 #include <RE/E/ExtraCellWaterType.h>
 #include <RE/N/NiAVObject.h>
 #include <RE/N/NiRTTI.h>
@@ -35,24 +36,16 @@ namespace SIE
 {
 	namespace SCellEditor
 	{
-		void ProcessGeometry(RE::NiAVObject* geometry, RE::TESWaterForm* waterType)
+		void UpdateCellWater(RE::TESObjectCELL& cell)
 		{
-			if (geometry != nullptr)
+			auto waterSystem = RE::TESWaterSystem::GetSingleton();
+
+			for (const auto& item : cell.references)
 			{
-				if (auto triShape = geometry->AsGeometry())
+				if (item->IsWater())
 				{
-					auto property = triShape->properties[1].get();
-					auto waterProperty = static_cast<RE::BSWaterShaderProperty*>(property);
-					auto waterMaterial =
-						static_cast<RE::BSWaterShaderMaterial*>(waterProperty->material);
-					waterType->FillMaterial(*waterMaterial);
-				}
-				else if (auto node = geometry->AsNode())
-				{
-					for (const auto& child : node->children)
-					{
-						ProcessGeometry(child.get(), waterType);
-					}
+					//auto geometry = item->Get3D2();
+					//UpdateWaterGeometry(geometry, item->GetBaseObject()->GetWaterType());
 				}
 			}
 		}
@@ -278,30 +271,46 @@ namespace SIE
 
 		if (cell.cellFlags.any(RE::TESObjectCELL::Flag::kHasWater))
 		{
-			if (const auto extra = static_cast<RE::ExtraCellWaterType*>(cell.extraList.GetByType(RE::ExtraDataType::kCellWaterType)))
+			if (const auto extraWater = static_cast<RE::ExtraCellWaterType*>(cell.extraList.GetByType(RE::ExtraDataType::kCellWaterType)))
 			{
-				if (extra->water != nullptr)
+				if (extraWater->water != nullptr)
 				{
 					if (PushingCollapsingHeader("Water"))
 					{
-						FormEditor(&cell, FormSelector<false>("Water Type", extra->water));
-						WaterEditor("WaterEditor", *extra->water);
-						ImGui::TreePop();
-
-						auto waterSystem = RE::TESWaterSystem::GetSingleton();
-
-						for (const auto& item : cell.references) 
+						FormEditor(&cell, FormSelector<false>("Water Type", extraWater->water));
+						if (WaterEditor("WaterEditor", *extraWater->water))
 						{
-							if (item->IsWater())
-							{
-								auto activator = static_cast<RE::TESObjectACTI*>(item->GetBaseObject());
-								activator->waterForm = extra->water;
-
-								auto geometry = item->Get3D2();
-								SCellEditor::ProcessGeometry(geometry,
-									item->GetBaseObject()->GetWaterType());
-							}
+							SCellEditor::UpdateCellWater(cell);
 						}
+						ImGui::TreePop();
+					}
+				}
+			}
+
+			if (cell.IsInteriorCell())
+			{
+				RE::BSFixedString envMapPath;
+				auto extraWaterEnvMap = static_cast<RE::ExtraCellWaterEnvMap*>(
+					cell.extraList.GetByType(RE::ExtraDataType::kCellWaterEnvMap));
+				if (extraWaterEnvMap != nullptr)
+				{
+					envMapPath = extraWaterEnvMap->waterEnvMap.textureName;
+				}
+				if (FormEditor(&cell, TexturePathEdit("Water Environment Map",
+										  "Water Environment Map", envMapPath)))
+				{
+					if (envMapPath.empty())
+					{
+						cell.extraList.Remove(extraWaterEnvMap);
+					}
+					else
+					{
+						if (extraWaterEnvMap == nullptr)
+						{
+							extraWaterEnvMap = new RE::ExtraCellWaterEnvMap;
+							cell.extraList.Add(extraWaterEnvMap);
+						}
+						extraWaterEnvMap->waterEnvMap.textureName = envMapPath;
 					}
 				}
 			}

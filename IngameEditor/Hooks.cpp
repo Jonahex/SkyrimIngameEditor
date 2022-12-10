@@ -1,5 +1,7 @@
 #include "Hooks.h"
 
+#include "Utils/Hooking.h"
+
 #include "RE/A/Actor.h"
 #include "RE/A/ActorSpeedChannel.h"
 #include "RE/A/AIProcess.h"
@@ -32,11 +34,155 @@
 #include <RE/A/ActorTargetSpeedChannel.h>
 #include <RE/A/ActorWeaponSpeedChannel.h>
 #include <RE/A/ActorTurnDeltaChannel.h>
+#include <RE/T/TESWaterForm.h>
+#include <RE/P/PlayerCharacter.h>
+#include <RE/B/BSShaderMaterial.h>
+#include <RE/B/BSLightingShaderMaterialBase.h>
+#include <RE/B/BSLightingShaderMaterialLandscape.h>
+#include <RE/B/BSLightingShaderMaterialLODLandscape.h>
+#include <RE/T/TESLandTexture.h>
+#include <RE/B/BSLightingShaderProperty.h>
+#include <RE/E/ExtraGhost.h>
+#include <RE/I/ImageSpaceEffectManager.h>
+#include <RE/B/BSXFlags.h>
+#include <RE/B/BSRenderPass.h>
 
 #include <iostream>
 #include <tchar.h>
 #include <unordered_set>
 #include <stacktrace>
+
+#include <Windows.h>
+
+struct TESWaterForm_Load
+{
+	static bool thunk(RE::TESWaterForm* form, RE::TESFile* a_mod)
+	{
+		const auto result = func(form, a_mod);
+
+		form->noiseTextures[0].textureName = {};
+		form->noiseTextures[1].textureName = {};
+		form->noiseTextures[2].textureName = {};
+		form->noiseTextures[3].textureName = {};
+
+		form->data.reflectionAmount = 0.f;
+		form->data.sunSpecularPower = 1000000.f;
+		form->data.sunSpecularMagnitude = 0.f;
+
+		return result;
+	}
+	static inline REL::Relocation<decltype(thunk)> func;
+	static constexpr size_t idx = 0x06;
+};
+
+struct TESLandTexture_Load
+{
+	static bool thunk(RE::TESLandTexture* form, RE::TESFile* a_mod)
+	{
+		const auto result = func(form, a_mod);
+
+		form->specularExponent = 0;
+
+		return result;
+	}
+	static inline REL::Relocation<decltype(thunk)> func;
+	static constexpr size_t idx = 0x06;
+};
+
+struct BSXFlags_Load
+{
+	static void thunk(RE::BSXFlags* flags, RE::NiStream& a_stream)
+	{
+		func(flags, a_stream);
+
+		flags->value &= ~static_cast<int32_t>(RE::BSXFlags::Flag::kHavok);
+	}
+	static inline REL::Relocation<decltype(thunk)> func;
+	static constexpr size_t idx = 0x18;
+};
+
+struct TESNPC_Load
+{
+	static bool thunk(RE::TESNPC* form, RE::TESFile* a_mod)
+	{
+		const auto result = func(form, a_mod);
+
+		form->actorData.actorBaseFlags.reset(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
+
+		return result;
+	}
+	static inline REL::Relocation<decltype(thunk)> func;
+	static constexpr size_t idx = 0x06;
+};
+
+struct Actor_InitItemImpl
+{
+	static void thunk(RE::Actor* form)
+	{
+		func(form);
+
+		//if (form != RE::PlayerCharacter::GetSingleton())
+		{
+			form->Disable();
+		}
+	}
+	static inline REL::Relocation<decltype(thunk)> func;
+	static constexpr size_t idx = 0x13;
+};
+
+struct PlayerCharacter_MoveToQueuedLocation
+{
+	static void thunk(RE::PlayerCharacter* player)
+	{
+		player->queuedTargetLoc.location.z = 50000.f;
+
+		func(player);
+	}
+	static inline REL::Relocation<decltype(thunk)> func;
+};
+
+struct BSLightingShader
+{
+	char _pad0[0x94];
+	uint32_t m_CurrentRawTechnique;
+	char _pad1[96];
+};
+
+//struct BSLightingShader_SetupMaterial
+//{
+//	static void thunk(BSLightingShader* shader, RE::BSShaderMaterial* material)
+//	{
+//		if (shader->m_CurrentRawTechnique == )
+//		static const REL::Relocation<bool*> LodBlendingEnabled(REL::ID(390936));
+//		*LodBlendingEnabled = !(shader->m_CurrentRawTechnique & 0x200000);
+//
+//		func(shader, material);
+//	}
+//	static inline REL::Relocation<decltype(thunk)> func;
+//	static constexpr size_t idx = 0x04;
+//};
+
+struct BSShaderProperty__SetFlag__InitLand
+{
+	static void thunk(RE::BSShaderProperty* property, uint8_t flag, bool value)
+	{
+		bool actualValue = false;
+		if (auto material = static_cast<RE::BSLightingShaderMaterialLandscape*>(property->material))
+		{
+			for (size_t index = 0; index < 6; ++index)
+			{
+				if (material->textureIsSnow[index])
+				{
+					actualValue = true;
+					break;
+				}
+			}
+		}
+
+		func(property, flag, actualValue);
+	}
+	static inline REL::Relocation<decltype(thunk)> func;
+};
 
 namespace BehaviorGraph
 {
@@ -904,6 +1050,75 @@ namespace Hooks
 			stl::write_vfunc<BehaviorGraph::TESForm_GetFormEditorID>(
 				RE::VTABLE_TESRegion[0]);
 			stl::write_vfunc<BehaviorGraph::TESForm_SetFormEditorID>(RE::VTABLE_TESRegion[0]);
+
+#ifdef OVERHEAD_TOOL
+			stl::write_vfunc<TESWaterForm_Load>(RE::VTABLE_TESWaterForm[0]);
+			stl::write_vfunc<BSXFlags_Load>(RE::VTABLE_BSXFlags[0]);
+			//stl::write_vfunc<Actor_InitItemImpl>(RE::VTABLE_Actor[0]);
+			//stl::write_vfunc<Actor_InitItemImpl>(RE::VTABLE_Character[0]);
+			//stl::write_vfunc<TESLandTexture_Load>(RE::VTABLE_TESLandTexture[0]);
+
+			{
+				const std::array targets{
+					REL::Relocation<std::uintptr_t>(REL::ID(40437), 0x26A),
+				};
+				for (const auto& target : targets)
+				{
+					stl::write_thunk_call<PlayerCharacter_MoveToQueuedLocation>(target.address());
+				}
+			}
+
+			{
+				const std::array targets{
+					REL::Relocation<std::uintptr_t>(REL::ID(18791), 0x2D8),
+				};
+				for (const auto& target : targets)
+				{
+					stl::write_thunk_call<BSShaderProperty__SetFlag__InitLand>(target.address());
+				}
+			}
+
+			static const REL::Relocation<bool*> IsLodBlendingEnabled(REL::ID(390936));
+			*IsLodBlendingEnabled = false;
+			static const REL::Relocation<bool*> IsHDREnabled(REL::ID(391301));
+			*IsHDREnabled = false;
+			auto isem = RE::ImageSpaceEffectManager::GetSingleton();
+			isem->shaderInfo.blurCSShaderInfo->isEnabled = false;
+#endif
+
+			
+			{
+				const auto renderPassCacheCtor = REL::ID(107500);
+				const int32_t passCount = 4194240;
+				const int32_t passSize = 4194240 * sizeof(RE::BSRenderPass);
+				const int32_t lightsCount = passCount * 16;
+				const int32_t lightsSize = lightsCount * sizeof(void*);
+				const int32_t lastPassIndex = passCount - 1;
+				const int32_t lastPassOffset =
+					(passCount - 1) * sizeof(RE::BSRenderPass);
+				const int32_t lastPassNextOffset =
+					(passCount - 1) * sizeof(RE::BSRenderPass) + offsetof(RE::BSRenderPass, next);
+				SIE::PatchMemory(
+					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0x76).address(),
+					reinterpret_cast<const uint8_t*>(&lightsSize), 4);
+				SIE::PatchMemory(
+					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0xAD).address(),
+					reinterpret_cast<const uint8_t*>(&passSize), 4);
+				SIE::PatchMemory(
+					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0xCB).address(),
+					reinterpret_cast<const uint8_t*>(&lastPassIndex), 4);
+				SIE::PatchMemory(
+					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0xF0).address(),
+					reinterpret_cast<const uint8_t*>(&lastPassNextOffset), 4);
+				SIE::PatchMemory(
+					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0xFD).address(),
+					reinterpret_cast<const uint8_t*>(&lastPassOffset), 4);
+				SIE::PatchMemory(
+					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0x191).address(),
+					reinterpret_cast<const uint8_t*>(&passCount), 4);
+			}
+
+			//stl::write_vfunc<BSLightingShader_SetupMaterial>(RE::VTABLE_BSLightingShader[0]);
 
 			//stl::write_vfunc<BehaviorGraph::TESWaterObject_dtor>(RE::VTABLE_TESWaterObject[0]);
 

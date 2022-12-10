@@ -1,17 +1,24 @@
 #include "Gui/MainWindow.h"
 
 #include "Gui/CellEditor.h"
+#include "Gui/Gui.h"
 #include "Gui/TargetEditor.h"
 #include "Gui/Utils.h"
 #include "Gui/WeatherEditor.h"
 #include "Serialization/Serializer.h"
+#include "Systems/WeatherEditorSystem.h"
 #include "Utils/Engine.h"
+#include "Utils/OverheadBuilder.h"
 #include "Utils/TargetManager.h"
 
+#include <RE/I/ImageSpaceEffectManager.h>
 #include <RE/M/Main.h>
+#include <RE/N/NiCamera.h>
+#include <RE/N/NiRTTI.h>
 #include <RE/P/PlayerCharacter.h>
 #include <RE/S/Sky.h>
 #include <RE/T/TESGlobal.h>
+#include <RE/T/TESObjectCELL.h>
 
 #include <imgui.h>
 
@@ -45,12 +52,12 @@ namespace SIE
 			static const REL::Relocation<bool*> isEnabledFlag(
 				RE::Offset::VolumetricLightingEnabledFlag);
 			static const REL::Relocation<bool*> unkFlag(RELOCATION_ID(528190, 415135));
-			static const REL::Relocation<bool***> unkObjbect(RELOCATION_ID(527731, 414660));
 
 			const bool wasEdited = ImGui::Checkbox(label, isEnabledFlag.get());
 			if (wasEdited)
 			{
-				*(*(*unkObjbect + 46) + 8) = *isEnabledFlag;
+				RE::ImageSpaceEffectManager::GetSingleton()
+					->shaderInfo.applyVolumetricLightingShaderInfo->isEnabled = *isEnabledFlag;
 				*unkFlag = false;
 			}
 			return wasEdited;
@@ -119,6 +126,7 @@ namespace SIE
 			ImGui::TreePop();
 		}
 
+		auto& core = Core::GetInstance();
 		RE::Sky* sky = RE::Sky::GetSingleton();
 		if (sky != nullptr)
 		{
@@ -129,7 +137,10 @@ namespace SIE
 				{
 					if (FormSelector<false>("Current weather", currentWeather))
 					{
-						sky->ForceWeather(currentWeather, true);
+						if (auto weatherEditorSystem = core.GetSystem<WeatherEditorSystem>())
+						{
+							weatherEditorSystem->SetWeather(currentWeather);
+						}
 					}
 					WeatherEditor("WeatherEditor", *currentWeather);
 					ImGui::TreePop();
@@ -151,7 +162,65 @@ namespace SIE
 				CellEditor("CellEditor", *currentCell);
 				ImGui::TreePop();
 			}
+
+			if (currentCell->IsExteriorCell())
+			{
+#ifdef OVERHEAD_TOOL
+				if (PushingCollapsingHeader("Overhead Builder"))
+				{
+					ImGui::DragScalarN("Min", ImGuiDataType_S16, &OverheadBuilder::Instance().minX,
+						2);
+					ImGui::DragScalarN("Max", ImGuiDataType_S16, &OverheadBuilder::Instance().maxX,
+						2);
+					if (ImGui::Button("Build"))
+					{
+						OverheadBuilder::Instance().Start();
+						Gui::Instance().SetEnabled(false);
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("Stop"))
+					{
+						OverheadBuilder::Instance().Finish();
+					}
+					ImGui::TreePop();
+				}
+#endif
+			}
 		}
+
+#ifdef OVERHEAD_TOOL
+		if (const auto playerCamera = RE::PlayerCamera::GetSingleton())
+		{
+			if (PushingCollapsingHeader("Camera"))
+			{
+				if (const auto root = playerCamera->cameraRoot.get();
+					root != nullptr && root->children.size() > 0 &&
+					std::strcmp(root->children[0]->GetRTTI()->name, "NiCamera") == 0)
+				{
+					auto camera = static_cast<RE::NiCamera*>(root->children[0].get());
+					if (PushingCollapsingHeader("Frustum"))
+					{
+						/*ImGui::Checkbox("Orthographic", &camera->viewFrustum.bOrtho);
+						ImGui::DragFloat("Left", &camera->viewFrustum.fLeft);
+						ImGui::DragFloat("Right", &camera->viewFrustum.fRight);
+						ImGui::DragFloat("Top", &camera->viewFrustum.fTop);
+						ImGui::DragFloat("Bottom", &camera->viewFrustum.fBottom);
+						ImGui::DragFloat("Near", &camera->viewFrustum.fNear);
+						ImGui::DragFloat("Far", &camera->viewFrustum.fFar);*/
+						ImGui::Checkbox("Orthographic", &OverheadBuilder::Instance().ortho);
+						ImGui::DragFloat("Left", &OverheadBuilder::Instance().left);
+						ImGui::DragFloat("Right", &OverheadBuilder::Instance().right);
+						ImGui::DragFloat("Top", &OverheadBuilder::Instance().top);
+						ImGui::DragFloat("Bottom", &OverheadBuilder::Instance().bottom);
+						ImGui::DragFloat("Near", &OverheadBuilder::Instance().nearPlane);
+						ImGui::DragFloat("Far", &OverheadBuilder::Instance().farPlane);
+						ImGui::TreePop();
+					}
+				}
+				ImGui::TreePop();
+			}
+		}
+#endif
 
 		ImGui::End();
 	}

@@ -7,5 +7,5 @@ namespace RE
 
 namespace SIE
 {
-	void WaterEditor(const char* label, RE::TESWaterForm& water);
+	bool WaterEditor(const char* label, RE::TESWaterForm& water);
 }

@@ -11,6 +11,7 @@
 #include <RE/B/BGSVolumetricLighting.h>
 #include <RE/E/ExtraCellImageSpace.h>
 #include <RE/E/ExtraCellSkyRegion.h>
+#include <RE/E/ExtraCellWaterEnvMap.h>
 #include <RE/E/ExtraCellWaterType.h>
 #include <RE/S/SpellItem.h>
 #include <RE/T/TESImageSpace.h>
@@ -344,6 +345,8 @@ namespace RE
 			cell.extraList.GetByType(ExtraDataType::kCellSkyRegion));
 		const auto waterExtra = static_cast<const RE::ExtraCellWaterType*>(
 			cell.extraList.GetByType(ExtraDataType::kCellWaterType));
+		const auto waterEnvMapExtra = static_cast<const RE::ExtraCellWaterEnvMap*>(
+			cell.extraList.GetByType(ExtraDataType::kCellWaterEnvMap));
 
 		j = json{
 			{ "Flags", cell.cellFlags.get() },
@@ -358,6 +361,10 @@ namespace RE
 		if (cell.IsInteriorCell())
 		{
 			j.push_back({ { "Lighting", *cell.cellData.interior } });
+			if (waterEnvMapExtra != nullptr)
+			{
+				j.push_back({ { "WaterEnvironmentMap", waterEnvMapExtra->waterEnvMap.textureName } });
+			}
 		}
 	}
 

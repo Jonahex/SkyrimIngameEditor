@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Core/Core.h"
+
 #include <RE/N/NiSmartPointer.h>
 
 #include <d3d11.h>
@@ -15,6 +17,16 @@ namespace SIE
     {
 	public:
 		static Gui& Instance();
+
+		void SetEnabled(bool isEnabled) 
+		{ 
+			IsEnabled = isEnabled; 
+		}
+
+		bool Enabled()
+		{ 
+			return IsEnabled;
+		}
 
     private:
 		Gui();
@@ -58,5 +70,7 @@ namespace SIE
 		static inline bool WasEnabled = false;
 
 		static inline POINT LastCursorPos;
+
+		static inline std::chrono::time_point<std::chrono::high_resolution_clock> previousProcessTime;
     };
 }

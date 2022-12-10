@@ -2,6 +2,7 @@
 
 #include "Gui/MainWindow.h"
 #include "Utils/Hooking.h"
+#include "Utils/OverheadBuilder.h"
 #include "Utils/TargetManager.h"
 
 #include "3rdparty/detours/Detours.h"
@@ -82,7 +83,18 @@ namespace SIE
 
 	HRESULT Gui::IDXGISwapChainPresentThunk(IDXGISwapChain* This, UINT SyncInterval, UINT Flags)
 	{
-        EndFrame();
+		EndFrame();
+
+		const auto currentTime = std::chrono::high_resolution_clock::now();
+		const auto delta = std::chrono::duration_cast<std::chrono::microseconds>(
+			currentTime - previousProcessTime);
+		previousProcessTime = currentTime;
+
+#ifdef OVERHEAD_TOOL
+		OverheadBuilder::Instance().Process(delta);
+#endif
+
+		Core::GetInstance().Process(delta);
 
         const auto result = IDXGISwapChainPresentFunc(This, SyncInterval, Flags);
 
@@ -262,6 +274,10 @@ namespace SIE
 				const auto msgPos = GetMessagePos();
 				TargetManager::Instance().TrySetTargetAt(LOWORD(msgPos), HIWORD(msgPos));
 			}
+		}
+		else
+		{
+			Core::GetInstance().HandleInput(Msg, wParam, lParam);
 		}
 	}
 

@@ -4,6 +4,12 @@
 #include <RE/T/TESWeather.h>
 #include <RE/V/Visibility.h>
 
+namespace RE
+{
+	class NiAVObject;
+	class TESWaterForm;
+}
+
 namespace SIE
 {
 	float U8ToFloatColor(uint8_t value);
@@ -14,4 +20,5 @@ namespace SIE
 	void ResetTimeTo(float time);
 	void ResetTimeTo(RE::TESWeather::ColorTimes::ColorTime colorTime);
 	void SetVisibility(RE::VISIBILITY visibility, bool isVisible);
+	void UpdateWaterGeometry(RE::NiAVObject* geometry, RE::TESWaterForm* waterType);
 }

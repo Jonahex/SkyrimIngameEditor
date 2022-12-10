@@ -1,10 +1,12 @@
 #include "Gui/WeatherEditor.h"
 
+#include "Core/Core.h"
 #include "Gui/DirectionalAmbientLightingColorsEditor.h"
 #include "Gui/ImageSpaceEditor.h"
 #include "Gui/ShaderParticleEditor.h"
 #include "Gui/Utils.h"
 #include "Gui/VolumetricLightingEditor.h"
+#include "Systems/WeatherEditorSystem.h"
 #include "Utils/Engine.h"
 
 #include "3rdparty/ImGuiFileDialog/ImGuiFileDialog.h"
@@ -205,6 +207,16 @@ namespace SIE
 		using namespace SWeatherEditor;
 
 		ImGui::PushID(label);
+
+		auto& core = Core::GetInstance();
+		if (auto weatherEditorSystem = core.GetSystem<WeatherEditorSystem>())
+		{
+			bool isLocked = weatherEditorSystem->IsWeatherLocked();
+			if (ImGui::Checkbox("Lock", &isLocked))
+			{
+				weatherEditorSystem->LockWeather(isLocked);
+			}
+		}
 
 		bool needsReset = false;
 
