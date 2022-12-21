@@ -194,6 +194,7 @@ target_link_libraries(
 		imgui::imgui
 		dinput8.lib
 		dxguid.lib
+		dbghelp.lib
 )
 
 target_precompile_headers(

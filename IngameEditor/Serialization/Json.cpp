@@ -258,7 +258,12 @@ namespace RE
 			{ "CloudTextures", saveCloudTextures(weather.cloudTextures) },
 			{ "Clouds", saveClouds() }, { "VisualEffect", SIE::ToFormKey(weather.referenceEffect) },
 			{ "Aurora", { { "File", weather.aurora.model.c_str() } } },
-			{ "SkyStatics", saveSkyStatics() }, { "Sounds" , saveSounds()} };
+			{ "SkyStatics", saveSkyStatics() }, { "Sounds", saveSounds() },
+			{ "VolumetricLighting",
+				{ { "Sunrise", SIE::ToFormKey(weather.volumetricLighting[kSunrise]) },
+					{ "Day", SIE::ToFormKey(weather.volumetricLighting[kDay]) },
+					{ "Sunset", SIE::ToFormKey(weather.volumetricLighting[kSunset]) },
+					{ "Night", SIE::ToFormKey(weather.volumetricLighting[kNight]) } } } };
 	}
 
 	void to_json(json& j, const BGSVolumetricLighting& lighting)

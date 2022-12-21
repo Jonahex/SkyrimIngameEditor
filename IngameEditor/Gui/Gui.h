@@ -8,12 +8,13 @@
 
 namespace RE
 {
+	class InputEvent;
 	class TESObjectREFR;
 }
 
 namespace SIE
 {
-    class Gui
+	class Gui : public RE::BSTEventSink<RE::InputEvent*>
     {
 	public:
 		static Gui& Instance();
@@ -28,6 +29,9 @@ namespace SIE
 			return IsEnabled;
 		}
 
+		RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* a_event,
+			RE::BSTEventSource<RE::InputEvent*>* a_eventSource) override;
+
     private:
 		Gui();
 
@@ -41,13 +45,6 @@ namespace SIE
 		static HRESULT IDXGISwapChainPresentThunk(IDXGISwapChain* This, UINT SyncInterval,
 			UINT Flags);
 
-		static HWND CreateWindowExAThunk(DWORD dwExStyle, LPCSTR lpClassName, LPCSTR lpWindowName,
-			DWORD dwStyle, int x, int y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu,
-			HINSTANCE hInstance, LPVOID lpParam);
-
-		static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-		static DWORD WINAPI MessageThread(LPVOID);
-
 		static void Initialize(HWND window, ID3D11Device* device,
 			ID3D11DeviceContext* deviceContext);
 		static void HandleInput(HWND Wnd, UINT Msg, WPARAM wParam, LPARAM lParam);
@@ -58,7 +55,6 @@ namespace SIE
 			D3D11CreateDeviceAndSwapChainFunc;
 		static inline REL::Relocation<decltype(IDXGISwapChainPresentThunk)>
 			IDXGISwapChainPresentFunc;
-		static inline REL::Relocation<decltype(CreateWindowExAThunk)> CreateWindowExAFunc;
 
 		static inline HWND SkyrimWindow = nullptr;
 		static inline WNDPROC OriginalWndProc = nullptr;

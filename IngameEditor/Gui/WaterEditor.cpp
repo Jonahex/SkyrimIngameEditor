@@ -76,7 +76,7 @@ namespace SIE
 				if (waterSystem->playerUnderwater)
 				{
 					static REL::Relocation<void (RE::TESWaterSystem*, bool, float)>
-						setPlayerUnderwater{ REL::ID(32216) };
+						setPlayerUnderwater{ RELOCATION_ID(31409, 32216) };
 
 					setPlayerUnderwater(waterSystem, !waterSystem->playerUnderwater,
 						waterSystem->underwaterHeight);
@@ -146,22 +146,43 @@ namespace SIE
 			}
 			if (PushingCollapsingHeader("Displacement Simulator"))
 			{
-				FormEditor(&water,
-					ImGui::SliderFloat("Force", &water.data.displacementForce, 0.f, 1.f));
-				FormEditor(&water,
-					ImGui::SliderFloat("Velocity", &water.data.displacementVelocity, 0.f, 1.f));
-				FormEditor(&water,
-					ImGui::SliderFloat("Falloff", &water.data.displacementFalloff, 0.f, 1.f));
-				FormEditor(&water,
-					ImGui::SliderFloat("Dampener", &water.data.displacementDampener, 0.f, 20.f));
-				FormEditor(&water,
-					ImGui::SliderFloat("Starting Size", &water.data.displacementSize, 0.f, 1.f));
+				if (FormEditor(&water,
+					ImGui::SliderFloat("Force", &water.data.displacementForce, 0.f, 1.f)))
+				{
+					needsReset = true;
+				}
+				if (FormEditor(&water,
+					ImGui::SliderFloat("Velocity", &water.data.displacementVelocity, 0.f, 1.f)))
+				{
+					needsReset = true;
+				}
+				if (FormEditor(&water,
+						ImGui::SliderFloat("Falloff", &water.data.displacementFalloff, 0.f, 1.f)))
+				{
+					needsReset = true;
+				}
+				if (FormEditor(&water, ImGui::SliderFloat("Dampener",
+										   &water.data.displacementDampener, 0.f, 20.f)))
+				{
+					needsReset = true;
+				}
+				if (FormEditor(&water, ImGui::SliderFloat("Starting Size",
+										   &water.data.displacementSize, 0.f, 1.f)))
+				{
+					needsReset = true;
+				}
 				ImGui::TreePop();
 			}
-			FormEditor(&water,
-				ImGui::DragFloat3("Linear Velocity", &water.linearVelocity.x, 0.1f, -100.f, 100.f));
-			FormEditor(&water,
-				ImGui::DragFloat3("Angular Velocity", &water.angularVelocity.x, 0.1f, -100.f, 100.f));
+			if (FormEditor(&water,
+				ImGui::DragFloat3("Linear Velocity", &water.linearVelocity.x, 0.1f, -100.f, 100.f)))
+			{
+				needsReset = true;
+			}
+			if (FormEditor(&water, ImGui::DragFloat3("Angular Velocity", &water.angularVelocity.x,
+									   0.1f, -100.f, 100.f)))
+			{
+				needsReset = true;
+			}
 			ImGui::TreePop();
 		}
 

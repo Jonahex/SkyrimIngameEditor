@@ -7,6 +7,8 @@
 namespace RE
 {
 	class NiAVObject;
+	class NiObject;
+	class Sky;
 	class TESWaterForm;
 }
 
@@ -18,7 +20,14 @@ namespace SIE
 	std::string GetTypedName(const RE::TESForm& form);
 	RE::TESGlobal* FindGlobal(const std::string& editorId);
 	void ResetTimeTo(float time);
-	void ResetTimeTo(RE::TESWeather::ColorTimes::ColorTime colorTime);
+	void ResetTimeForFog(RE::Sky& sky, bool isDay);
+	void ResetTimeForColor(RE::Sky& sky, RE::TESWeather::ColorTimes::ColorTime colorTime);
 	void SetVisibility(RE::VISIBILITY visibility, bool isVisible);
 	void UpdateWaterGeometry(RE::NiAVObject* geometry, RE::TESWaterForm* waterType);
+	void ReloadWaterObjects();
+
+	bool IsGrassVisible();
+	void SetGrassVisible(bool value);
+
+	std::string GetFullName(const RE::NiObject& object);
 }

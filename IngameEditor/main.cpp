@@ -1,6 +1,8 @@
 #include "Hooks.h"
 #include "Gui/Gui.h"
 
+#include <RE/B/BSInputDeviceManager.h>
+
 void MessageHandler(SKSE::MessagingInterface::Message* a_message)
 {
 	if (a_message->type == SKSE::MessagingInterface::kPostLoad) 
@@ -12,6 +14,10 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_message)
 	else if (a_message->type == SKSE::MessagingInterface::kPostPostLoad)
 	{
 		Hooks::OnPostPostLoad();
+	}
+	else if (a_message->type == SKSE::MessagingInterface::kDataLoaded)
+	{
+		RE::BSInputDeviceManager::GetSingleton()->AddEventSink(&SIE::Gui::Instance());
 	}
 }
 

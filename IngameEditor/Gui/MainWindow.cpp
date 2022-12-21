@@ -11,12 +11,15 @@
 #include "Utils/OverheadBuilder.h"
 #include "Utils/TargetManager.h"
 
+#include <RE/B/BGSGrassManager.h>
+#include <RE/I/ImageSpaceEffect.h>
 #include <RE/I/ImageSpaceEffectManager.h>
 #include <RE/M/Main.h>
 #include <RE/N/NiCamera.h>
 #include <RE/N/NiRTTI.h>
 #include <RE/P/PlayerCharacter.h>
 #include <RE/S/Sky.h>
+#include <RE/T/TES.h>
 #include <RE/T/TESGlobal.h>
 #include <RE/T/TESObjectCELL.h>
 
@@ -39,26 +42,61 @@ namespace SIE
 			return wasEdited;
 		}
 
-		bool ImageSpaceEOFFlagEdit(const char* label) 
+		bool GrassVisibilityEdit(const char* label) 
 		{
-			static const REL::Relocation<bool*> isEnabledFlag(
-				RE::Offset::ImageSpaceEOFEffectsEnabledFlag);
-
-			return ImGui::Checkbox(label, isEnabledFlag.get());
-		}
-
-		bool VolumetricLightingFlagEdit(const char* label)
-		{
-			static const REL::Relocation<bool*> isEnabledFlag(
-				RE::Offset::VolumetricLightingEnabledFlag);
-			static const REL::Relocation<bool*> unkFlag(RELOCATION_ID(528190, 415135));
-
-			const bool wasEdited = ImGui::Checkbox(label, isEnabledFlag.get());
+			bool isVisible = IsGrassVisible();
+			const bool wasEdited = ImGui::Checkbox(label, &isVisible);
 			if (wasEdited)
 			{
-				RE::ImageSpaceEffectManager::GetSingleton()
-					->shaderInfo.applyVolumetricLightingShaderInfo->isEnabled = *isEnabledFlag;
-				*unkFlag = false;
+				SetGrassVisible(isVisible);
+			}
+			return wasEdited;
+		}
+
+		void UpdateGrassFadeDistance() 
+		{
+			static const REL::Relocation<void(float, float, float, float)> updateFunc{ RELOCATION_ID(99914, 106557)
+			};
+			static const REL::Relocation<float*> startFadeDistance(RELOCATION_ID(501109, 359414));
+			static const REL::Relocation<float*> fadeRange(RELOCATION_ID(501111, 359417));
+			auto grassManager = RE::BGSGrassManager::GetSingleton();
+
+			const auto newDistance = *startFadeDistance + *fadeRange;
+			grassManager->fadeDistance = *startFadeDistance + *fadeRange;
+			updateFunc(0.f, 0.f, *startFadeDistance, grassManager->fadeDistance);
+		}
+
+		bool GrassFadeDistanceEdit(const char* label) 
+		{
+			static const REL::Relocation<float*> startFadeDistance(RELOCATION_ID(501109, 359414));
+
+			const bool wasEdited = ImGui::DragFloat(label, &*startFadeDistance, 100.f, 0.f);
+			if (wasEdited)
+			{
+				UpdateGrassFadeDistance();
+			}
+			return wasEdited;
+		}
+
+		bool NiAVObjectVisibilityEdit(const char* label, RE::NiAVObject* object) 
+		{
+			if (object == nullptr)
+			{
+				return false;
+			}
+
+			bool isVisible = !object->flags.any(RE::NiAVObject::Flag::kHidden);
+			const bool wasEdited = ImGui::Checkbox(label, &isVisible);
+			if (wasEdited)
+			{
+				if (isVisible)
+				{
+					object->flags.reset(RE::NiAVObject::Flag::kHidden);
+				}
+				else
+				{
+					object->flags.set(RE::NiAVObject::Flag::kHidden);
+				}
 			}
 			return wasEdited;
 		}
@@ -90,14 +128,92 @@ namespace SIE
 				SMainWindow::VisibilityFlagEdit("MultiBound", RE::VISIBILITY::kMultiBound);
 				SMainWindow::VisibilityFlagEdit("Water", RE::VISIBILITY::kWater);
 
+				SMainWindow::GrassVisibilityEdit("Grass");
+				ImGui::SameLine();
+				SMainWindow::GrassFadeDistanceEdit("Fade Distance");
+
+				static const REL::Relocation<RE::NiNode**> treeLODNode(RELOCATION_ID(516170, 402321));
+				static const REL::Relocation<RE::NiNode**> waterLODNode(
+					RELOCATION_ID(516171, 402322));
+				static const REL::Relocation<RE::NiNode**> landLODNode(
+					RELOCATION_ID(516172, 402324));
+				static const REL::Relocation<RE::NiNode**> objectsLODNode(
+					RELOCATION_ID(516173, 402325));
+				static const REL::Relocation<RE::NiNode**> cloudsLODNode(
+					RELOCATION_ID(516174, 406687));
+
+				SMainWindow::NiAVObjectVisibilityEdit("Tree LOD", *treeLODNode);
+				SMainWindow::NiAVObjectVisibilityEdit("Water LOD", *waterLODNode);
+				SMainWindow::NiAVObjectVisibilityEdit("Land LOD", *landLODNode);
+				SMainWindow::NiAVObjectVisibilityEdit("Objects LOD", *objectsLODNode);
+				SMainWindow::NiAVObjectVisibilityEdit("Clouds LOD", *cloudsLODNode);
+
 				ImGui::TreePop();
 			}
 
 			if (PushingCollapsingHeader("Effects"))
 			{
-				SMainWindow::VolumetricLightingFlagEdit("Volumetric Lighting");
-				SMainWindow::ImageSpaceEOFFlagEdit("End of Frame ImageSpaceEffect");
+				auto isem = RE::ImageSpaceEffectManager::GetSingleton();
 
+				/*if (PushingCollapsingHeader("Imagespace Shaders"))
+				{
+					ImGui::Checkbox("Apply Reflections",
+						&isem->shaderInfo.applyReflectionsShaderInfo->isEnabled);
+					ImGui::Checkbox("Apply Volumetric Lighting",
+						&isem->shaderInfo.applyVolumetricLightingShaderInfo->isEnabled);
+					ImGui::Checkbox("Basic Copy", &isem->shaderInfo.basicCopyShaderInfo->isEnabled);
+					ImGui::Checkbox("Lens Flares", &isem->shaderInfo.iblfShaderInfo->isEnabled);
+					ImGui::Checkbox("Blur CS", &isem->shaderInfo.blurCSShaderInfo->isEnabled);
+					ImGui::Checkbox("Composite Lens Flare Volumetric Lighting",
+						&isem->shaderInfo.compositeLensFlareVolumetricLightingShaderInfo
+							 ->isEnabled);
+					ImGui::Checkbox("Copy Subregion CS",
+						&isem->shaderInfo.copySubRegionCSShaderInfo->isEnabled);
+					ImGui::Checkbox("Debug Snow", &isem->shaderInfo.debugSnowShaderInfo->isEnabled);
+					ImGui::Checkbox("Exponential Prefilter",
+						&isem->shaderInfo.ibExponentialPreFilterShaderInfo->isEnabled);
+					ImGui::Checkbox("Lighting Composite",
+						&isem->shaderInfo.lightingCompositeShaderInfo->isEnabled);
+					ImGui::Checkbox("Perlin Noise CS",
+						&isem->shaderInfo.perlinNoiseCSShaderInfo->isEnabled);
+					ImGui::Checkbox("Reflections",
+						&isem->shaderInfo.reflectionsShaderInfo->isEnabled);
+					ImGui::Checkbox("Scalable Ambient Obscurance",
+						&isem->shaderInfo.scalableAmbientObscuranceShaderInfo->isEnabled);
+					ImGui::Checkbox("Scalable Ambient Obscurance CS",
+						&isem->shaderInfo.saoCSShaderInfo->isEnabled);
+					ImGui::Checkbox("Indirect Lighting",
+						&isem->shaderInfo.indirectLightingShaderInfo->isEnabled);
+					ImGui::Checkbox("Simple Color",
+						&isem->shaderInfo.simpleColorShaderInfo->isEnabled);
+					ImGui::Checkbox("Snow SSS", &isem->shaderInfo.snowSSSShaderInfo->isEnabled);
+					ImGui::Checkbox("Temporal AAA",
+						&isem->shaderInfo.temporalAAShaderInfo->isEnabled);
+					ImGui::Checkbox("Upsample Dynamic Resolution",
+						&isem->shaderInfo.upsampleDynamicResolutionShaderInfo->isEnabled);
+					ImGui::Checkbox("Water Blend",
+						&isem->shaderInfo.waterBlendShaderInfo->isEnabled);
+					ImGui::Checkbox("Underwater Mask",
+						&isem->shaderInfo.underwaterMaskShaderInfo->isEnabled);
+
+					ImGui::TreePop();
+				}*/
+
+				ImGui::Checkbox("HDR", &*REL::Relocation<bool*>(RE::Offset::HDREnabledFlag));
+				ImGui::Checkbox("Fog",
+					&*REL::Relocation<bool*>(RE::Offset::SAOApplyFogEnabledFlag));
+				ImGui::Checkbox("Volumetric Lighting",
+					&*REL::Relocation<bool*>(
+						RE::Offset::Texture3dAccumulationVolumetricLightingEnabledFlag));
+				ImGui::Checkbox("End of Frame ImageSpaceEffect",
+					&*REL::Relocation<bool*>(
+						RE::Offset::ImageSpaceEOFEffectsEnabledFlag));
+
+				ImGui::TreePop();
+			}
+
+			if (PushingCollapsingHeader("Editor"))
+			{
 				auto& targetManager = TargetManager::Instance();
 				bool enableHighlight = targetManager.GetEnableTargetHighlight();
 				if (ImGui::Checkbox("Target Highlight", &enableHighlight))
@@ -221,6 +337,24 @@ namespace SIE
 			}
 		}
 #endif
+
+		if (PushingCollapsingHeader("Misc"))
+		{
+			if (ImGui::Button("Enable all"))
+			{
+				const auto tes = RE::TES::GetSingleton();
+				tes->ForEachReference(
+					[](RE::TESObjectREFR& refr)
+					{
+						if (refr.IsDisabled())
+						{
+							refr.Enable();
+						}
+						return RE::BSContainer::ForEachResult::kContinue;
+					});
+			}
+			ImGui::TreePop();
+		}
 
 		ImGui::End();
 	}

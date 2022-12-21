@@ -15,10 +15,15 @@
 #include <RE/E/ExtraCellSkyRegion.h>
 #include <RE/E/ExtraCellWaterEnvMap.h>
 #include <RE/E/ExtraCellWaterType.h>
+#include <RE/G/GridCellArray.h>
+#include <RE/I/ImageSpaceEffectManager.h>
 #include <RE/N/NiAVObject.h>
+#include <RE/N/NiCloningProcess.h>
 #include <RE/N/NiRTTI.h>
 #include <RE/N/NiSourceTexture.h>
 #include <RE/S/Sky.h>
+#include <RE/T/TES.h>
+#include <RE/T/TESBoundObject.h>
 #include <RE/T/TESImageSpace.h>
 #include <RE/T/TESObjectACTI.h>
 #include <RE/T/TESObjectCELL.h>
@@ -34,23 +39,6 @@
 
 namespace SIE
 {
-	namespace SCellEditor
-	{
-		void UpdateCellWater(RE::TESObjectCELL& cell)
-		{
-			auto waterSystem = RE::TESWaterSystem::GetSingleton();
-
-			for (const auto& item : cell.references)
-			{
-				if (item->IsWater())
-				{
-					//auto geometry = item->Get3D2();
-					//UpdateWaterGeometry(geometry, item->GetBaseObject()->GetWaterType());
-				}
-			}
-		}
-	}
-
     void CellEditor(const char* label, RE::TESObjectCELL& cell)
 	{
 		ImGui::PushID(label);
@@ -79,11 +67,7 @@ namespace SIE
 						cell.extraList.Add(extraImageSpace);
 					}
 
-					static REL::Relocation<void (*)(void*, const RE::ImageSpaceBaseData&)>
-						imageSpaceUpdate{ REL::ID(105683) };
-					static REL::Relocation<void**> imageSpaceEffectManager{ REL::ID(414660) };
-
-					imageSpaceUpdate(*imageSpaceEffectManager, imageSpace->data);
+					RE::ImageSpaceEffectManager::GetSingleton()->unkA8 = &imageSpace->data;
 				}
 				else if (extraImageSpace != nullptr)
 				{
@@ -269,7 +253,7 @@ namespace SIE
 			}
 		}
 
-		if (cell.cellFlags.any(RE::TESObjectCELL::Flag::kHasWater))
+		//if (cell.cellFlags.any(RE::TESObjectCELL::Flag::kHasWater))
 		{
 			if (const auto extraWater = static_cast<RE::ExtraCellWaterType*>(cell.extraList.GetByType(RE::ExtraDataType::kCellWaterType)))
 			{
@@ -277,10 +261,14 @@ namespace SIE
 				{
 					if (PushingCollapsingHeader("Water"))
 					{
-						FormEditor(&cell, FormSelector<false>("Water Type", extraWater->water));
+						if (FormEditor(&cell, FormSelector<false>("Water Type", extraWater->water)))
+						{
+							ReloadWaterObjects();
+						}
 						if (WaterEditor("WaterEditor", *extraWater->water))
 						{
-							SCellEditor::UpdateCellWater(cell);
+							ReloadWaterObjects();
+							//SCellEditor::UpdateCellWater(cell, extraWater->water);
 						}
 						ImGui::TreePop();
 					}
@@ -312,6 +300,7 @@ namespace SIE
 						}
 						extraWaterEnvMap->waterEnvMap.textureName = envMapPath;
 					}
+					ReloadWaterObjects();
 				}
 			}
 		}

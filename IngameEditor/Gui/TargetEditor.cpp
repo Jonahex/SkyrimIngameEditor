@@ -1,6 +1,8 @@
 #include "Gui/TargetEditor.h"
 
 #include "Gui/FootIkEditor.h"
+#include "Gui/NiObjectEditor.h"
+#include "Gui/NiTransformEditor.h"
 #include "Gui/Utils.h"
 #include "Gui/WaterEditor.h"
 #include "Utils/Engine.h"
@@ -9,6 +11,7 @@
 
 #define FTS_FUZZY_MATCH_IMPLEMENTATION
 #include "3rdparty/fts_fuzzy_match.h"
+#include "3rdparty/ImGuizmo/ImGuizmo.h"
 
 #include <RE/A/AnimationSetDataSingleton.h>
 #include <RE/B/BSAnimationGraphManager.h>
@@ -19,6 +22,8 @@
 #include <RE/H/hkbVariableInfo.h>
 #include <RE/H/hkbVariableValueSet.h>
 #include <RE/H/hkClass.h>
+#include <RE/N/NiNode.h>
+#include <RE/N/NiRTTI.h>
 #include <RE/T/TESObjectACTI.h>
 #include <RE/T/TESWaterForm.h>
 
@@ -154,6 +159,38 @@ namespace SIE
 			ImGui::Text(std::format("Target: {}", GetTypedName(*target)).c_str());
 			ImGui::Text(std::format("Base: {}", GetTypedName(*base)).c_str());
 
+			bool enabled = !target->IsDisabled();
+			if (ImGui::Checkbox("Enabled", &enabled))
+			{
+				if (enabled)
+				{
+					target->Enable();
+				}
+				else
+				{
+					target->Disable();
+				}
+			}
+
+			if (ReferenceTransformEditor("Transform", *target))
+			{
+
+			}
+
+			if (auto object3d = target->Get3D())
+			{
+				if (PushingCollapsingHeader("3D"))
+				{
+					if (DispatchableNiObjectEditor("", *object3d))
+					{
+						RE::NiUpdateData updateData;
+						updateData.flags.set(RE::NiUpdateData::Flag::kDirty);
+						object3d->Update(updateData);
+					}
+					ImGui::TreePop();
+				}
+			}
+
 			if (target->formType == RE::FormType::ActorCharacter)
 			{
 				if (PushingCollapsingHeader("ActorState"))
@@ -242,22 +279,16 @@ namespace SIE
 					const auto activator = static_cast<RE::TESObjectACTI*>(base);
 					if (PushingCollapsingHeader("Water"))
 					{
-						FormEditor(activator,
-							FormSelector<false>("Water Type", activator->waterForm));
+						if (FormEditor(activator,
+							FormSelector<false>("Water Type", activator->waterForm)))
+						{
+							ReloadWaterObjects();
+						}
 						if (activator->waterForm != nullptr)
 						{
 							if (WaterEditor("WaterEditor", *activator->waterForm))
 							{
-								//auto geometry = target->Get3D2();
-								//UpdateWaterGeometry(geometry, activator->waterForm);
-
-								REL::Relocation<void(RE::TESObjectREFR*)> loadFunc{ REL::ID(
-									19837) };
-								REL::Relocation<void(RE::TESObjectREFR*)> unloadFunc{ REL::ID(
-									19838) };
-
-								unloadFunc(target);
-								loadFunc(target);
+								ReloadWaterObjects();
 							}
 						}
 						ImGui::TreePop();

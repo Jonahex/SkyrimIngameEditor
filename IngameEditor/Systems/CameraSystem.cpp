@@ -59,9 +59,9 @@ namespace SIE
 			static void thunk(RE::FreeCameraState* state, RE::NiQuaternion& a_rotation)
 			{
 				static const REL::Relocation<void(RE::NiMatrix3*, float, float, float)>
-					NiMatrix3__FromEulerZXY(REL::ID(70233));
+					NiMatrix3__FromEulerZXY(RELOCATION_ID(68886, 70233));
 				static const REL::Relocation<void(RE::NiQuaternion*, RE::NiMatrix3*)>
-					NiQuaternion__FromMatrix(REL::ID(70844));
+					NiQuaternion__FromMatrix(RELOCATION_ID(69467, 70844));
 
 				RE::NiMatrix3 tmp;
 				NiMatrix3__FromEulerZXY(&tmp, state->eulerZ, state->eulerX,

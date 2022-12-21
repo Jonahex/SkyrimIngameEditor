@@ -837,14 +837,14 @@ namespace BehaviorGraph
 			}
 		}*/
 
-		{
+		/*{
 			const std::array targets{
 				REL::Relocation<std::uintptr_t>(REL::ID(37998), 0x6F),
 			};
 			for (const auto& target : targets) {
 				stl::write_thunk_call<Test>(target.address());
 			}
-		}
+		}*/
 
 		/*{
 			c
@@ -1080,13 +1080,13 @@ namespace Hooks
 
 			static const REL::Relocation<bool*> IsLodBlendingEnabled(REL::ID(390936));
 			*IsLodBlendingEnabled = false;
-			static const REL::Relocation<bool*> IsHDREnabled(REL::ID(391301));
+			static const REL::Relocation<bool*> IsHDREnabled(RE::Offset::HDREnabledFlag);
 			*IsHDREnabled = false;
 			auto isem = RE::ImageSpaceEffectManager::GetSingleton();
 			isem->shaderInfo.blurCSShaderInfo->isEnabled = false;
 #endif
-
-			
+		
+#ifdef SKYRIM_SUPPORT_AE
 			{
 				const auto renderPassCacheCtor = REL::ID(107500);
 				const int32_t passCount = 4194240;
@@ -1117,6 +1117,7 @@ namespace Hooks
 					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0x191).address(),
 					reinterpret_cast<const uint8_t*>(&passCount), 4);
 			}
+#endif
 
 			//stl::write_vfunc<BSLightingShader_SetupMaterial>(RE::VTABLE_BSLightingShader[0]);
 

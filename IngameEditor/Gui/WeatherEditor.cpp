@@ -15,6 +15,7 @@
 #include <RE/B/BGSShaderParticleGeometryData.h>
 #include <RE/B/BGSSoundDescriptorForm.h>
 #include <RE/B/BGSVolumetricLighting.h>
+#include <RE/C/Calendar.h>
 #include <RE/S/Sky.h>
 #include <RE/T/TESImageSpace.h>
 #include <RE/T/TESObjectSTAT.h>
@@ -65,14 +66,51 @@ namespace SIE
 			return result;
 		}
 
-		bool ResetTimeButton(RE::TESWeather::ColorTimes::ColorTime colorTime)
+		bool ResetTimeForColorButton(RE::Sky& sky, RE::TESWeather::ColorTimes::ColorTime colorTime)
 		{
 			if (ImGui::Button("Reset Time"))
 			{
-				ResetTimeTo(colorTime);
+				ResetTimeForColor(sky, colorTime);
 				return true;
 			}
 			return false;
+		}
+
+		bool ResetTimeForFogButton(RE::Sky& sky, bool isDay)
+		{
+			if (ImGui::Button("Reset Time"))
+			{
+				ResetTimeForFog(sky, isDay);
+				return true;
+			}
+			return false;
+		}
+
+		void ColorTimeInfo(RE::Sky& sky) 
+		{ 
+			sky.currentGameHour = RE::Calendar::GetSingleton()->GetHour();
+			const auto colorTimeInfo = sky.GetColorTimeInfo();
+			if (colorTimeInfo.needsTimeInterpolation)
+			{
+				ImGui::Text(std::format("Interpolating between {} and {} with {} fraction {}",
+					ColorTimeNames[static_cast<size_t>(colorTimeInfo.firstTime)],
+					ColorTimeNames[static_cast<size_t>(colorTimeInfo.secondTime)],
+					ColorTimeNames[static_cast<size_t>(colorTimeInfo.firstTime)], colorTimeInfo
+						.timePercent)
+								.c_str());
+			}
+			else
+			{
+				ImGui::Text(std::format("Current time is {}",
+					ColorTimeNames[static_cast<size_t>(colorTimeInfo.firstTime)]).c_str());
+			}
+		}
+
+		void FogTimeInfo(RE::Sky& sky)
+		{
+			sky.currentGameHour = RE::Calendar::GetSingleton()->GetHour();
+			const auto fogTimeInfo = sky.GetFogTimeInfo();
+			ImGui::Text(std::format("Day fraction is {}", fogTimeInfo.dayPercent).c_str());
 		}
 
 		bool CloudSpeedEdit(const char* label, RE::TESWeather& weather, size_t layerIndex)
@@ -206,6 +244,8 @@ namespace SIE
 	{
 		using namespace SWeatherEditor;
 
+		auto& sky = *RE::Sky::GetSingleton();
+
 		ImGui::PushID(label);
 
 		auto& core = Core::GetInstance();
@@ -226,8 +266,10 @@ namespace SIE
 		};
 		const auto resetEditor = [&needsReset, &nonResetEditor](bool isEdited)
 		{
-			nonResetEditor(isEdited);
-		    needsReset = true;
+			if (nonResetEditor(isEdited))
+			{
+				needsReset = true;
+			}
 			return isEdited;
 		};
 
@@ -235,6 +277,7 @@ namespace SIE
 		{
 			if (PushingCollapsingHeader("Imagespaces"))
 			{
+				ColorTimeInfo(sky);
 				for (size_t colorTime = 0; colorTime < RE::TESWeather::ColorTime::kTotal;
 					 ++colorTime)
 				{
@@ -242,7 +285,8 @@ namespace SIE
 					if (currentImageSpace != nullptr &&
 						PushingCollapsingHeader(ColorTimeNames[colorTime]))
 					{
-						ResetTimeButton(
+						ResetTimeForColorButton(
+							sky,
 							static_cast<RE::TESWeather::ColorTimes::ColorTime>(colorTime));
 						nonResetEditor(FormSelector<false>("Current imagespace",
 							weather.imageSpaces[colorTime]));
@@ -254,12 +298,13 @@ namespace SIE
 			}
 			if (PushingCollapsingHeader("Volumetric Lighting"))
 			{
+				ColorTimeInfo(sky);
 				for (size_t colorTime = 0; colorTime < RE::TESWeather::ColorTime::kTotal;
 					 ++colorTime)
 				{
 					if (PushingCollapsingHeader(ColorTimeNames[colorTime]))
 					{
-						ResetTimeButton(
+						ResetTimeForColorButton(sky,
 							static_cast<RE::TESWeather::ColorTimes::ColorTime>(colorTime));
 						nonResetEditor(FormSelector<true>("Current lighting",
 												 weather.volumetricLighting[colorTime]));
@@ -275,9 +320,10 @@ namespace SIE
 			}
 			if (PushingCollapsingHeader("Fog"))
 			{
+				FogTimeInfo(sky);
 				if (PushingCollapsingHeader("Day"))
 				{
-					ResetTimeButton(RE::TESWeather::ColorTime::kDay);
+					ResetTimeForFogButton(sky, true);
 					nonResetEditor(ImGui::DragFloat("Near", &weather.fogData.dayNear, 50.f));
 					nonResetEditor(ImGui::DragFloat("Far", &weather.fogData.dayFar, 50.f));
 					nonResetEditor(ImGui::DragFloat("Power", &weather.fogData.dayPower, 0.1f, 0.f));
@@ -286,7 +332,7 @@ namespace SIE
 				}
 				if (PushingCollapsingHeader("Night"))
 				{
-					ResetTimeButton(RE::TESWeather::ColorTime::kNight);
+					ResetTimeForFogButton(sky, false);
 					nonResetEditor(ImGui::DragFloat("Near", &weather.fogData.nightNear, 50.f));
 					nonResetEditor(ImGui::DragFloat("Far", &weather.fogData.nightFar, 50.f));
 					nonResetEditor(
@@ -298,12 +344,13 @@ namespace SIE
 			}
 			if (PushingCollapsingHeader("Colors"))
 			{
+				ColorTimeInfo(sky);
 				for (size_t colorTime = 0; colorTime < RE::TESWeather::ColorTime::kTotal;
 					 ++colorTime)
 				{
 					if (PushingCollapsingHeader(ColorTimeNames[colorTime]))
 					{
-						ResetTimeButton(
+						ResetTimeForColorButton(sky, 
 							static_cast<RE::TESWeather::ColorTimes::ColorTime>(colorTime));
 						for (size_t colorType = 0; colorType < RE::TESWeather::ColorTypes::kTotal;
 							 ++colorType)
@@ -329,12 +376,13 @@ namespace SIE
 							resetEditor(TexturePathEdit("TexturePath", "Path",
 								weather.cloudTextures[layerIndex].textureName));
 							resetEditor(CloudSpeedEdit("Cloud Speed", weather, layerIndex));
+							ColorTimeInfo(sky);
 							for (size_t colorTime = 0;
 								 colorTime < RE::TESWeather::ColorTime::kTotal; ++colorTime)
 							{
 								if (PushingCollapsingHeader(ColorTimeNames[colorTime]))
 								{
-									ResetTimeButton(
+									ResetTimeForColorButton(sky, 
 										static_cast<RE::TESWeather::ColorTimes::ColorTime>(
 											colorTime));
 									nonResetEditor(ColorEdit("Color",
@@ -368,11 +416,12 @@ namespace SIE
 		}
 		if (PushingCollapsingHeader("Directional Ambient"))
 		{
+			ColorTimeInfo(sky);
 			for (size_t colorTime = 0; colorTime < RE::TESWeather::ColorTime::kTotal; ++colorTime)
 			{
 				if (PushingCollapsingHeader(ColorTimeNames[colorTime]))
 				{
-					ResetTimeButton(static_cast<RE::TESWeather::ColorTimes::ColorTime>(colorTime));
+					ResetTimeForColorButton(sky, static_cast<RE::TESWeather::ColorTimes::ColorTime>(colorTime));
 					nonResetEditor(DirectionalAmbientLightingColorsEditor("##DALC",
 						weather.directionalAmbientLightingColors[colorTime]));
 					ImGui::TreePop();
