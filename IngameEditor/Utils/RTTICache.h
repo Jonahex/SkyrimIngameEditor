@@ -11,7 +11,7 @@ namespace SIE
 	class RTTI
 	{
 	public:
-		using ObjectEditor = bool (*)(void*);
+		using ObjectEditor = bool (*)(void*, void*);
 
 		struct Base
 		{
@@ -40,7 +40,7 @@ namespace SIE
 
 		const RTTI& GetRTTI(const void* object);
 		const std::string& GetTypeName(const void* object);
-		bool BuildEditor(void* object);
+		bool BuildEditor(void* object, void* context = nullptr);
 
 	private:
 		void CacheBases(int hierarchyDescriptorOffset, uintptr_t imageBase);

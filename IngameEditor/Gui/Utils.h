@@ -72,9 +72,11 @@ namespace SIE
 		return wasEdited;
 	}
 
+	bool BSFixedStringEdit(const char* label, RE::BSFixedString& text);
 	bool PathEdit(const char* label, const char* text, RE::BSFixedString& path, const char* filter,
 		const char* folder);
 	bool TexturePathEdit(const char* label, const char* text, RE::BSFixedString& path);
+	bool NifTexturePathEdit(const char* label, const char* text, RE::BSFixedString& path);
 	bool EspPathEdit(const char* label, const char* text, RE::BSFixedString& path);
 	bool MeshPathEdit(const char* label, const char* text, RE::BSFixedString& path);
 

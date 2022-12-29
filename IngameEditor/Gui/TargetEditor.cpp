@@ -25,6 +25,7 @@
 #include <RE/N/NiNode.h>
 #include <RE/N/NiRTTI.h>
 #include <RE/T/TESObjectACTI.h>
+#include <RE/T/TESObjectTREE.h>
 #include <RE/T/TESWaterForm.h>
 
 #include <imgui.h>
@@ -172,7 +173,7 @@ namespace SIE
 				}
 			}
 
-			if (ReferenceTransformEditor("Transform", *target))
+			if (FormEditor(target, ReferenceTransformEditor("Transform", *target)))
 			{
 
 			}
@@ -270,9 +271,8 @@ namespace SIE
 							.c_str());
 					ImGui::TreePop();
 				}
-			}
-
-			if (base->formType == RE::FormType::Activator)
+			} 
+			else if (base->formType == RE::FormType::Activator)
 			{
 				if (target->IsWater())
 				{
@@ -293,6 +293,22 @@ namespace SIE
 						}
 						ImGui::TreePop();
 					}
+				}
+			}
+			else if (base->formType == RE::FormType::Tree)
+			{
+				if (PushingCollapsingHeader("Tree"))
+				{
+					RE::TESObjectTREE* tree = static_cast<RE::TESObjectTREE*>(base);
+
+					ImGui::DragFloat("Trunk Flexibility", &tree->data.trunkFlexibility, 0.01f);
+					ImGui::DragFloat("Branch Flexibility", &tree->data.branchFlexibility, 0.01f);
+					ImGui::DragFloat("Leaf Amplitude", &tree->data.leafAmplitude, 0.01f);
+					ImGui::DragFloat("Leaf Frequency", &tree->data.leafFrequency, 0.01f);
+
+					tree->ReplaceModel();
+
+					ImGui::TreePop();
 				}
 			}
 

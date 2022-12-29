@@ -21,6 +21,8 @@
 #include <RE/T/TESWaterForm.h>
 #include <RE/T/TESWeather.h>
 
+#include <format>
+
 namespace RE
 {
 	using namespace nlohmann;
@@ -247,9 +249,9 @@ namespace RE
 			{ "ThunderLightningEndFadeOut", weather.data.thunderLightningEndFadeOut / 255.f },
 			{ "ThunderLightningFrequency", weather.data.thunderLightningFrequency / 255.f },
 			{ "LightningColor",
-				std::format("255, {}, {}, {}", SIE::FloatToU8Color(weather.data.lightningColor.red),
-					SIE::FloatToU8Color(weather.data.lightningColor.green),
-					SIE::FloatToU8Color(weather.data.lightningColor.blue)) },
+				std::format("255, {}, {}, {}", weather.data.lightningColor.red,
+					weather.data.lightningColor.green,
+					weather.data.lightningColor.blue) },
 			{ "Flags", weather.data.flags.underlying() },
 			{ "VisualEffectBegin", weather.data.visualEffectBegin },
 			{ "VisualEffectEnd", weather.data.visualEffectEnd },
@@ -361,14 +363,15 @@ namespace RE
 			{ "SkyAndWeatherFromRegion",
 				SIE::ToFormKey(skyRegionExtra ? skyRegionExtra->skyRegion : nullptr) },
 			{ "Water", SIE::ToFormKey(waterExtra ? waterExtra->water : nullptr) },
+			{ "Name", cell.fullName.c_str() },
 		};
 
 		if (cell.IsInteriorCell())
 		{
-			j.push_back({ { "Lighting", *cell.cellData.interior } });
+			j["Lighting"] = *cell.cellData.interior;
 			if (waterEnvMapExtra != nullptr)
 			{
-				j.push_back({ { "WaterEnvironmentMap", waterEnvMapExtra->waterEnvMap.textureName } });
+				j["WaterEnvironmentMap"] = waterEnvMapExtra->waterEnvMap.textureName;
 			}
 		}
 	}
@@ -443,6 +446,16 @@ namespace RE
 		};
 	}
 
+	void to_json(json& j, const TESObjectREFR& refr)
+	{
+		j = json
+		{ 
+			{ "Placement", { { "Position", refr.data.location }, { "Rotation", refr.data.angle } } },
+			{ "Scale", refr.refScale / 100.f }, 
+			{ "Cell", SIE::ToFormKey(refr.GetSaveParentCell()) }
+		};
+	}
+
 	void to_json(json& j, const TESForm& form)
 	{
 		switch (form.GetFormType())
@@ -467,6 +480,9 @@ namespace RE
 			break;
 		case FormType::Weather:
 			to_json(j, static_cast<const TESWeather&>(form));
+			break;
+		case FormType::Reference:
+			to_json(j, static_cast<const TESObjectREFR&>(form));
 			break;
 		}
 	}

@@ -194,25 +194,26 @@ namespace SIE
 	}
 
     void Serializer::EnqueueForm(const RE::TESForm& form)
-    {
-	    forms.insert(&form);
+	{
+		constexpr uint32_t indexMask = 0xFF000000;
+
+		const auto dataHandler = RE::TESDataHandler::GetSingleton();
+		const auto master =
+			dataHandler->LookupLoadedModByIndex((form.GetFormID() & indexMask) >> 24);
+
+	    forms[&form] = { { "Master", master->fileName }, { "Override", form.GetFile()->fileName },
+			{ "FormKey", ToFormKey(&form) }, { "Form", form },
+			{ "References", SSerializer::CollectReferences(form) } };
 	}
 
     void Serializer::Export(const std::string& path) const
 	{
 		nlohmann::json j;
 
-		constexpr uint32_t indexMask = 0xFF000000;
 
-		const auto dataHandler = RE::TESDataHandler::GetSingleton();
-
-		for (auto form : forms)
+		for (auto& [form, json] : forms)
 		{
-			const auto master =
-				dataHandler->LookupLoadedModByIndex((form->GetFormID() & indexMask) >> 24);
-
-			j.push_back({ { "Master", master->fileName }, { "Override", form->GetFile()->fileName },
-				{ "FormKey", ToFormKey(form) }, { "Form", *form }, { "References", SSerializer::CollectReferences(*form) } });
+			j.push_back(json);
 		}
 
 		const auto pathToAddW = std::filesystem::current_path().append(path).native();
@@ -227,6 +228,16 @@ namespace SIE
 		else
 		{
 			logger::info("Export failed!");
+		}
+	}
+
+	void Serializer::OnQuitGame() const 
+	{ 
+		if (!forms.empty())
+		{
+			Export(std::format(
+				"Data/SKSE/plugins/EspGenerator/OnQuitAutoSave_{:%d-%m-%Y_%H-%M-%OS}.esp",
+				std::chrono::system_clock::now()));
 		}
 	}
 }

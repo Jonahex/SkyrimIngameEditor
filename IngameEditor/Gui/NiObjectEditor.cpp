@@ -2,15 +2,18 @@
 
 #include "Gui/NiTransformEditor.h"
 #include "Gui/Utils.h"
+#include "Utils/RTTICache.h"
 
 #include <RE/B/BSGeometry.h>
 #include <RE/B/BSLightingShaderMaterial.h>
 #include <RE/B/BSLightingShaderProperty.h>
+#include <RE/B/BSShaderTextureSet.h>
 #include <RE/B/BSXFlags.h>
 #include <RE/N/NiCollisionObject.h>
+#include <RE/N/NiIntegerExtraData.h>
 #include <RE/N/NiNode.h>
-#include <RE/N/NiRTTI.h>
 #include <RE/N/NiSkinInstance.h>
+#include <RE/N/NiStringExtraData.h>
 #include <RE/N/NiTimeController.h>
 
 #include <imgui.h>
@@ -19,17 +22,23 @@ namespace SIE
 {
 	namespace SNiObjectEditor
 	{
-		using NiObjectEditorFunctor = bool(*)(RE::NiObject&);
-		using BSShaderMaterialEditorFunctor = bool(*)(RE::BSShaderMaterial&);
+		static bool NiIntegerExtraDataEditor(void* object, void* context)
+		{
+			auto& extraData = *static_cast<RE::NiIntegerExtraData*>(object);
 
-		static bool NiObjectEditor(RE::NiObject& object)
-		{ 
-			return false; 
+			bool wasEdited = false;
+
+			if (ImGui::DragInt("Value", &extraData.value))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
 		}
 
-		static bool BSXFlagsEditor(RE::NiObject& object) 
+		static bool BSXFlagsEditor(void* object, void* context) 
 		{
-			auto& bsxFlags = static_cast<RE::BSXFlags&>(object);
+			auto& bsxFlags = *static_cast<RE::BSXFlags*>(object);
 
 			bool wasEdited = false;
 
@@ -49,65 +58,182 @@ namespace SIE
 			return wasEdited;
 		}
 
-		static bool NiObjectNETEditor(RE::NiObject& object) 
+		static bool NiStringExtraDataEditor(void* object, void* context)
 		{
-			auto& objectNet = static_cast<RE::NiObjectNET&>(object);
+			auto& extraData = *static_cast<RE::NiStringExtraData*>(object);
 
 			bool wasEdited = false;
 
-			if (objectNet.extraDataSize > 0)
+			if (BSFixedStringEdit("Value", extraData.value))
 			{
-				if (PushingCollapsingHeader("Extra Data"))
-				{
-					for (uint16_t extraIndex = 0; extraIndex < objectNet.extraDataSize; ++extraIndex)
-					{
-						if (DispatchableNiObjectEditor(std::to_string(extraIndex).c_str(),
-							*objectNet.extra[extraIndex]))
-						{
-							wasEdited = true;
-						}
-					}
-					ImGui::TreePop();
-				}
+				wasEdited = true;
 			}
 
-			if (objectNet.controllers != nullptr)
+			return wasEdited;
+		}
+
+		struct BSShaderTextureSetEditorContext
+		{
+			BSShaderTextureSetEditorContext(const RE::BSLightingShaderProperty& aProperty,
+				const RE::BSLightingShaderMaterialBase& aMaterial) 
+				: property(aProperty)
+				, material(aMaterial)
+			{}
+
+			std::vector<std::pair<RE::BSTextureSet::Texture, std::string>> GetAvailableTextures()
 			{
-				if (PushingCollapsingHeader("Controllers"))
+				std::vector<std::pair<RE::BSTextureSet::Texture, std::string>> result{
+					{ RE::BSTextureSet::Texture::kDiffuse, "Diffuse" },
+					{ RE::BSTextureSet::Texture::kNormal, "Normal" },
+				};
+				if (material.GetFeature() == RE::BSShaderMaterial::Feature::kEnvironmentMap)
 				{
-					size_t index = 0;
-					auto controller = objectNet.controllers.get();
-					do {
-						if (DispatchableNiObjectEditor(std::to_string(index++).c_str(),
-								*controller))
-						{
-							wasEdited = true;
-						}
-						controller = controller->next.get();
-					} while (controller != nullptr);
-					ImGui::TreePop();
+					result.push_back({RE::BSTextureSet::Texture::kEnvironment, "Environment Map"});
+					result.push_back({RE::BSTextureSet::Texture::kEnvironmentMask, "Environment Mask"});
+				}
+				else if (material.GetFeature() == RE::BSShaderMaterial::Feature::kEye)
+				{
+					result.push_back(
+						{ RE::BSTextureSet::Texture::kEnvironment, "Environment Map" });
+					result.push_back(
+						{ RE::BSTextureSet::Texture::kEnvironmentMask, "Environment Mask" });
+				}
+				else if (material.GetFeature() == RE::BSShaderMaterial::Feature::kFaceGen)
+				{
+					result.push_back(
+						{ RE::BSTextureSet::Texture::kSubsurface, "Subsurface" });
+					result.push_back({ RE::BSTextureSet::Texture::kDetail, "Detail" });
+					result.push_back({ RE::BSTextureSet::Texture::kTint, "Tint" });
+				}
+				else if (material.GetFeature() == RE::BSShaderMaterial::Feature::kGlowMap)
+				{
+					result.push_back({ RE::BSTextureSet::Texture::kGlowMap, "Glowmap" });
+				}
+				else if (material.GetFeature() == RE::BSShaderMaterial::Feature::kMultilayerParallax)
+				{
+					result.push_back(
+						{ RE::BSTextureSet::Texture::kEnvironment, "Environment Map" });
+					result.push_back(
+						{ RE::BSTextureSet::Texture::kEnvironmentMask, "Environment Mask" });
+					result.push_back({ RE::BSTextureSet::Texture::kMultilayer, "Multilayer" });
+				}
+				else if (material.GetFeature() == RE::BSShaderMaterial::Feature::kParallax)
+				{
+					result.push_back({ RE::BSTextureSet::Texture::kHeight, "Height" });
+				}
+
+				if (property.flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kBackLighting))
+				{
+					result.push_back(
+						{ RE::BSTextureSet::Texture::kBacklightMask, "Backlight Mask" });
+				}
+				if (property.flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kRimLighting))
+				{
+					result.push_back({ RE::BSTextureSet::Texture::kRimlightMask, "Rimlight Mask" });
+				}
+				else if (property.flags.all(
+							 RE::BSShaderProperty::EShaderPropertyFlag::kSoftLighting))
+				{
+					result.push_back(
+						{ RE::BSTextureSet::Texture::kSoftlightMask, "Softlight Mask" });
+				}
+				if (property.flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kSpecular,
+						RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
+				{
+					result.push_back({ RE::BSTextureSet::Texture::kSpecular, "Specular" });
+				}
+
+				return result;
+			}
+
+			const RE::BSLightingShaderProperty& property;
+			const RE::BSLightingShaderMaterialBase& material;
+		};
+
+		static bool BSShaderTextureSetEditor(void* object, void* contextPtr)
+		{
+			if (contextPtr == nullptr)
+			{
+				logger::error("BSShaderTextureSetEditorContext is not provided!");
+			}
+
+			auto& textureSet = *static_cast<RE::BSShaderTextureSet*>(object);
+			auto& context = *static_cast<BSShaderTextureSetEditorContext*>(contextPtr);
+
+			bool wasEdited = false;
+
+			for (const auto& [textureIndex, textureName] : context.GetAvailableTextures())
+			{
+				if (NifTexturePathEdit(std::to_string(textureIndex).c_str(), textureName.c_str(),
+						textureSet.textures[textureIndex]))
+				{
+					wasEdited = true;
 				}
 			}
 
 			return wasEdited;
 		}
 
-		static bool NiAVObjectEditor(RE::NiObject& object) 
+		static bool NiObjectNETEditor(void* object, void* context) 
 		{
-			auto& avObject = static_cast<RE::NiAVObject&>(object);
+			auto& objectNet = *static_cast<RE::NiObjectNET*>(object);
 
 			bool wasEdited = false;
 
-			if (NiObjectNETEditor(avObject))
+			if (objectNet.extraDataSize > 0)
 			{
-				wasEdited = true;
+				for (uint16_t extraIndex = 0; extraIndex < objectNet.extraDataSize; ++extraIndex)
+				{
+					auto& rttiCache = RTTICache::Instance();
+					const std::string& typeName =
+						rttiCache.GetTypeName(objectNet.extra[extraIndex]);
+					if (PushingCollapsingHeader(std::format("[Extra Data] <{}> {}##{}", typeName,
+							objectNet.extra[extraIndex]->name.c_str(), extraIndex)
+													.c_str()))
+					{
+						if (rttiCache.BuildEditor(objectNet.extra[extraIndex]))
+						{
+							wasEdited = true;
+						}
+						ImGui::TreePop();
+					}
+				}
 			}
+
+			if (objectNet.controllers != nullptr)
+			{
+				auto controller = objectNet.controllers.get();
+				do {
+					auto& rttiCache = RTTICache::Instance();
+					const std::string& typeName = rttiCache.GetTypeName(controller);
+					if (PushingCollapsingHeader(std::format("[Contoller] <{}>", typeName).c_str()))
+					{
+						if (rttiCache.BuildEditor(controller))
+						{
+							wasEdited = true;
+						}
+						ImGui::TreePop();
+					}
+					controller = controller->next.get();
+				} while (controller != nullptr);
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiAVObjectEditor(void* object, void* context) 
+		{
+			auto& avObject = *static_cast<RE::NiAVObject*>(object);
+
+			bool wasEdited = false;
 
 			if (avObject.collisionObject != nullptr)
 			{
-				if (PushingCollapsingHeader("Collision"))
+				auto& rttiCache = RTTICache::Instance();
+				const std::string& typeName = rttiCache.GetTypeName(avObject.collisionObject.get());
+				if (PushingCollapsingHeader(std::format("[Collision] <{}>", typeName).c_str()))
 				{
-					if (DispatchableNiObjectEditor("", *avObject.collisionObject))
+					if (rttiCache.BuildEditor(avObject.collisionObject.get()))
 					{
 						wasEdited = true;
 					}
@@ -149,71 +275,72 @@ namespace SIE
 			return wasEdited;
 		}
 
-		static bool NiNodeEditor(RE::NiObject& object) 
+		static bool NiNodeEditor(void* object, void* context) 
 		{
-			auto& node = static_cast<RE::NiNode&>(object);
+			auto& node = *static_cast<RE::NiNode*>(object);
 
 			bool wasEdited = false;
 
-			if (NiAVObjectEditor(node))
-			{
-				wasEdited = true;
-			}
-
 			if (!node.children.empty())
 			{
-				if (PushingCollapsingHeader("Children"))
+				size_t childIndex = 0;
+				for (auto& child : node.children)
 				{
-					size_t index = 0;
-					for (auto& child : node.children)
+					if (child != nullptr)
 					{
-						if (child != nullptr)
+						auto& rttiCache = RTTICache::Instance();
+						const std::string& typeName = rttiCache.GetTypeName(child.get());
+						if (PushingCollapsingHeader(
+								std::format("[Child] <{}> {}##{}", typeName, child->name.c_str(), childIndex)
+									.c_str()))
 						{
-							if (DispatchableNiObjectEditor(std::to_string(index++).c_str(), *child))
+							if (rttiCache.BuildEditor(child.get()))
 							{
 								wasEdited = true;
 							}
+							ImGui::TreePop();
 						}
+						++childIndex;
 					}
-					ImGui::TreePop();
 				}
 			}
 
 			return wasEdited;
 		}
 
-		static bool BSGeometryEditor(RE::NiObject& object)
+		static bool BSGeometryEditor(void* object, void* context)
 		{
-			auto& geometry = static_cast<RE::BSGeometry&>(object);
+			auto& geometry = *static_cast<RE::BSGeometry*>(object);
 
 			bool wasEdited = false;
 
-			if (NiAVObjectEditor(geometry))
-			{
-				wasEdited = true;
-			}
+			auto& rttiCache = RTTICache::Instance();
 
-			if (PushingCollapsingHeader("Properties"))
+			size_t propertyIndex = 0;
+			for (const auto& property : geometry.properties)
 			{
-				size_t index = 0;
-				for (const auto& property : geometry.properties)
+				if (property != nullptr)
 				{
-					if (property != nullptr)
+					const std::string& typeName = rttiCache.GetTypeName(property.get());
+					if (PushingCollapsingHeader(
+							std::format("[Property] <{}>##{}", typeName, propertyIndex).c_str()))
 					{
-						if (DispatchableNiObjectEditor(std::to_string(index++).c_str(), *property))
+						if (rttiCache.BuildEditor(property.get()))
 						{
 							wasEdited = true;
 						}
+						ImGui::TreePop();
 					}
+					++propertyIndex;
 				}
-				ImGui::TreePop();
 			}
 
 			if (geometry.skinInstance != nullptr)
 			{
-				if (PushingCollapsingHeader("Skin"))
+				const std::string& typeName = rttiCache.GetTypeName(geometry.skinInstance.get());
+				if (PushingCollapsingHeader(std::format("[Skin] <{}>", typeName).c_str()))
 				{
-					if (DispatchableNiObjectEditor("", *geometry.skinInstance))
+					if (rttiCache.BuildEditor(geometry.skinInstance.get()))
 					{
 						wasEdited = true;
 					}
@@ -224,160 +351,111 @@ namespace SIE
 			return wasEdited;
 		}
 
-		/*static bool BSShaderMaterialEditor(RE::BSShaderMaterial& material) 
+		static bool BSShaderMaterialEditor(void* object, void* context) 
 		{
-
-		}
-
-		static NiObjectEditorFunctor DispatchBSShaderMaterialEditor(const void* object)
-		{
-			static std::unordered_map<const TypeDescriptor*, BSShaderMaterialEditorFunctor> editors{
-				{ &*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSShaderMaterial),
-					&BSShaderMaterialEditor },
-			};
-
-			const TypeDescriptor* currentType = GetTypeDescriptor(object);
-			currentType->pVFTable->
-			auto it = editors.find(currentRtti);
-			while (it == editors.cend())
-			{
-				currentRtti = currentRtti->baseRTTI;
-				if (currentRtti == nullptr)
-				{
-					return nullptr;
-				}
-				it = editors.find(currentRtti);
-			}
-			return it->second;
-		}
-
-		static bool DispatchableBSShaderMaterialEditor(const char* label,
-			RE::BSShaderMaterial& material) 
-		{
-			ImGui::PushID(label);
+			auto& material = *static_cast<RE::BSShaderMaterial*>(object);
 
 			bool wasEdited = false;
 
-			std::string name = "<BSShaderMaterial>";
-			BSShaderMaterialEditorFunctor editor = &BSShaderMaterialEditor;
-			switch (material.GetType())
+			if (ImGui::DragFloat2("UV Offset 0", &material.texCoordOffset[0].x, 0.05f))
 			{
-				case RE::BSShaderMaterial::Type::kLighting:
-				{
-					name = "<BSLightingShaderMaterialBase>";
-					switch (material.GetFeature())
-					{
-						case RE::BSShaderMaterial::Feature::kDefault:
-						{
-							name = "<BSLightingShaderMaterial>";
-							break;
-						}
-						case RE::BSShaderMaterial::Feature::kEnvironmentMap:
-						{
-							name = "<BSLightingShaderMaterialEnvmap>";
-							break;
-						}
-						case RE::BSShaderMaterial::Feature::kGlowMap:
-						{
-							name = "<BSLightingShaderMaterialGlowmap>";
-							break;
-						}
-						case RE::BSShaderMaterial::Feature::kParallax:
-						{
-							name = "<BSLightingShaderMaterialParallax>";
-							break;
-						}
-						case RE::BSShaderMaterial::Feature::kFaceGen:
-						{
-							name = "<BSLightingShaderMaterialFacegen>";
-							break;
-						}
-						case RE::BSShaderMaterial::Feature::kFaceGenRGBTint:
-						{
-							name = "<BSLightingShaderMaterialFacegenTint>";
-							break;
-						}
-						case RE::BSShaderMaterial::Feature::kHairTint:
-						{
-							name = "<BSLightingShaderMaterialHairTint>";
-							break;
-						}
-						case RE::BSShaderMaterial::Feature::kParallaxOcc:
-						{
-							name = "<BSLightingShaderMaterialParallaxOcc>";
-							break;
-						}
-						case RE::BSShaderMaterial::Feature::kLODLand:
-						{
-							name = "<BSLightingShaderMaterialLODLandscape>";
-							break;
-						}
-						case RE::BSShaderMaterial::Feature::kMultilayerParallax:
-						{
-							name = "<BSLightingShaderMaterialMultiLayerParallax>";
-							break;
-						}
-						case RE::BSShaderMaterial::Feature::kParallaxOcc:
-						{
-							name = "<BSLightingShaderMaterialParallaxOcc>";
-							break;
-						}
-						case RE::BSShaderMaterial::Feature::kParallaxOcc:
-						{
-							name = "<BSLightingShaderMaterialParallaxOcc>";
-							break;
-						}
-						case RE::BSShaderMaterial::Feature::kParallaxOcc:
-						{
-							name = "<BSLightingShaderMaterialParallaxOcc>";
-							break;
-						}
-					}
-					break;
-				}
-				case RE::BSShaderMaterial::Type::kEffect:
-				{
-					name = "<BSEffectShaderMaterial>";
-					break;
-				}
-				case RE::BSShaderMaterial::Type::kWater:
-				{
-					name = "<BSWaterShaderMaterial>";
-					break;
-				}
+				material.texCoordOffset[1] = material.texCoordOffset[0];
 			}
-
-			const auto editor = DispatchEditor(*rtti);
-			if (editor != nullptr)
+			if (ImGui::DragFloat2("UV Scale 0", &material.texCoordScale[0].x, 0.05f))
 			{
-				const std::string name = GetFullName(object);
-				if (PushingCollapsingHeader(name.c_str()))
-				{
-					wasEdited = editor(object);
-					ImGui::TreePop();
-				}
+				material.texCoordScale[1] = material.texCoordScale[0];
 			}
-
-			ImGui::PopID();
 
 			return wasEdited;
-		}*/
+		}
 
-		static bool BSShaderPropertyEditor(RE::NiObject& object)
+		struct BSShaderMaterialEditorContext
 		{
-			auto& bsShaderProperty = static_cast<RE::BSShaderProperty&>(object);
+			BSShaderMaterialEditorContext(const RE::BSShaderProperty& aProperty) :
+				property(aProperty)
+			{}
+
+			const RE::BSShaderProperty& property;
+		};
+
+		static bool BSLightingShaderMaterialBaseEditor(void* object, void* contextPtr)
+		{
+			if (contextPtr == nullptr)
+			{
+				logger::error("BSShaderMaterialEditorContext is not provided!");
+			}
+
+			auto& material = *static_cast<RE::BSLightingShaderMaterialBase*>(object);
+			auto& context = *static_cast<BSShaderMaterialEditorContext*>(contextPtr);
 
 			bool wasEdited = false;
 
-			if (NiObjectNETEditor(bsShaderProperty))
+			auto& rttiCache = RTTICache::Instance();
+			if (PushingCollapsingHeader(std::format("[Texture Set] <{}>",
+					rttiCache.GetTypeName(material.textureSet.get()))
+											.c_str()))
 			{
-				wasEdited = true;
+				BSShaderTextureSetEditorContext textureSetContext{ static_cast<const RE::BSLightingShaderProperty&>(context.property), material };
+				if (rttiCache.BuildEditor(material.textureSet.get(), &textureSetContext))
+				{
+					material.diffuseTexture = nullptr;
+					material.OnLoadTextureSet(0, material.textureSet.get());
+					wasEdited = true;
+				}
+				ImGui::TreePop();
 			}
 
-			if (ImGui::SliderFloat("Alpha", &bsShaderProperty.alpha, 0.f, 1.f))
+			if (context.property.flags.all(RE::BSLightingShaderProperty::EShaderPropertyFlag::kSpecular))
+			{
+				if (ImGui::ColorEdit3("Specular Color", &material.specularColor.red))
+				{
+					wasEdited = true;
+				}
+				if (ImGui::DragFloat("Specular Power", &material.specularPower, 0.01f))
+				{
+					wasEdited = true;
+				}
+				if (ImGui::DragFloat("Specular Color Scale", &material.specularColorScale, 0.01f))
+				{
+					wasEdited = true;
+				}
+			}
+			if (ImGui::SliderFloat("Alpha", &material.materialAlpha, 0.f, 1.f))
 			{
 				wasEdited = true;
 			}
+			if (context.property.flags.any(
+					RE::BSLightingShaderProperty::EShaderPropertyFlag::kRefraction,
+					RE::BSLightingShaderProperty::EShaderPropertyFlag::kTempRefraction))
+			{
+				if (ImGui::DragFloat("Refraction Power", &material.refractionPower, 0.01f))
+				{
+					wasEdited = true;
+				}
+			}
+			if (context.property.flags.any(
+					RE::BSLightingShaderProperty::EShaderPropertyFlag::kRimLighting,
+					RE::BSLightingShaderProperty::EShaderPropertyFlag::kSoftLighting))
+			{
+				if (ImGui::DragFloat("Subsurface Light Rolloff", &material.subSurfaceLightRolloff,
+						0.01f))
+				{
+					wasEdited = true;
+				}
+				if (ImGui::DragFloat("Rim Light Power", &material.rimLightPower, 0.01f))
+				{
+					wasEdited = true;
+				}
+			}
+
+			return wasEdited;
+		}
+
+		static bool BSShaderPropertyEditor(void* object, void* context)
+		{
+			auto& bsShaderProperty = *static_cast<RE::BSShaderProperty*>(object);
+
+			bool wasEdited = false;
 
 			if (PushingCollapsingHeader("Flags"))
 			{
@@ -394,30 +472,27 @@ namespace SIE
 
 			if (bsShaderProperty.material != nullptr)
 			{
-				if (PushingCollapsingHeader("Material"))
+				auto& rttiCache = RTTICache::Instance();
+				const std::string& typeName = rttiCache.GetTypeName(bsShaderProperty.material);
+				if (PushingCollapsingHeader(std::format("[Material] <{}>", typeName).c_str()))
 				{
-					ImGui::TreePop();
-					/*if (DispatchableNiObjectEditor("",
-							*bsShaderProperty.material))
+					BSShaderMaterialEditorContext materialContext(bsShaderProperty);
+					if (rttiCache.BuildEditor(bsShaderProperty.material, &materialContext))
 					{
 						wasEdited = true;
-					}*/
+					}
+					ImGui::TreePop();
 				}
 			}
 
 			return wasEdited;
 		}
 
-		static bool BSLightingShaderPropertyEditor(RE::NiObject& object)
+		static bool BSLightingShaderPropertyEditor(void* object, void* context)
 		{
-			auto& bsLightingShaderProperty = static_cast<RE::BSLightingShaderProperty&>(object);
+			auto& bsLightingShaderProperty = *static_cast<RE::BSLightingShaderProperty*>(object);
 
 			bool wasEdited = false;
-
-			if (BSShaderPropertyEditor(bsLightingShaderProperty))
-			{
-				wasEdited = true;
-			}
 
 			if (bsLightingShaderProperty.emissiveColor != nullptr)
 			{
@@ -435,36 +510,6 @@ namespace SIE
 
 			return wasEdited;
 		}
-
-		static NiObjectEditorFunctor DispatchEditor(const RE::NiRTTI& rtti)
-		{
-			static std::unordered_map<const RE::NiRTTI*, NiObjectEditorFunctor> editors
-			{
-				{ &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_NiObject), &NiObjectEditor },
-				{ &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_NiObjectNET), &NiObjectNETEditor },
-				{ &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_NiAVObject), &NiAVObjectEditor },
-				{ &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_NiNode), &NiNodeEditor },
-				{ &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_BSXFlags), &BSXFlagsEditor },
-				{ &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_BSGeometry), &BSGeometryEditor },
-				{ &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_BSShaderProperty),
-					&BSShaderPropertyEditor },
-				{ &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_BSLightingShaderProperty),
-					&BSLightingShaderPropertyEditor },
-			};
-
-			const RE::NiRTTI* currentRtti = &rtti;
-			auto it = editors.find(currentRtti);
-			while (it == editors.cend())
-			{
-				currentRtti = currentRtti->baseRTTI;
-				if (currentRtti == nullptr)
-				{
-					return nullptr;
-				}
-				it = editors.find(currentRtti);
-			}
-			return it->second;
-		}
 	}
 
 	bool DispatchableNiObjectEditor(const char* label, RE::NiObject& object)
@@ -475,20 +520,45 @@ namespace SIE
 
 		bool wasEdited = false;
 
-		const auto rtti = object.GetRTTI();
-		const auto editor = DispatchEditor(*rtti);
-		if (editor != nullptr)
+		auto& rttiCache = RTTICache::Instance();
+		const std::string name = GetFullName(object);
+		if (PushingCollapsingHeader(name.c_str()))
 		{
-			const std::string name = GetFullName(object);
-			if (PushingCollapsingHeader(name.c_str()))
-			{
-				wasEdited = editor(object);
-				ImGui::TreePop();
-			}
+			wasEdited = rttiCache.BuildEditor(&object);
+			ImGui::TreePop();
 		}
 
 		ImGui::PopID();
 
 		return wasEdited;
+	}
+
+	void RegisterNiEditors() 
+	{ 
+		auto& rttiCache = RTTICache::Instance();
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiObjectNET),
+			SNiObjectEditor::NiObjectNETEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiAVObject),
+			SNiObjectEditor::NiAVObjectEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiNode),
+			SNiObjectEditor::NiNodeEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSGeometry),
+			SNiObjectEditor::BSGeometryEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSShaderProperty),
+			SNiObjectEditor::BSShaderPropertyEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderProperty),
+			SNiObjectEditor::BSLightingShaderPropertyEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSShaderMaterial),
+			SNiObjectEditor::BSShaderMaterialEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderMaterialBase),
+			SNiObjectEditor::BSLightingShaderMaterialBaseEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSXFlags),
+			SNiObjectEditor::BSXFlagsEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiIntegerExtraData),
+			SNiObjectEditor::NiIntegerExtraDataEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiStringExtraData),
+			SNiObjectEditor::NiStringExtraDataEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSShaderTextureSet),
+			SNiObjectEditor::BSShaderTextureSetEditor);
 	}
 }

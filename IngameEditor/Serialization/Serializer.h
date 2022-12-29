@@ -1,5 +1,7 @@
 #pragma once
 
+#include <nlohmann/json.hpp>
+
 #include <Windows.h>
 
 #include <unordered_set>
@@ -20,6 +22,7 @@ namespace SIE
 
 		void EnqueueForm(const RE::TESForm& form);
 		void Export(const std::string& path) const;
+		void OnQuitGame() const;
 
 	private:
 		Serializer();
@@ -27,6 +30,6 @@ namespace SIE
 		inline static HMODULE Dll = nullptr;
 		static inline int (*ExportImpl)(const char*, const char*) = nullptr;
 
-		std::unordered_set<const RE::TESForm*> forms;
+		std::unordered_map<const RE::TESForm*, nlohmann::json> forms;
     };
 }

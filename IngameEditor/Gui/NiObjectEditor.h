@@ -8,4 +8,5 @@ namespace RE
 namespace SIE
 {
 	bool DispatchableNiObjectEditor(const char* label, RE::NiObject& object);
+	void RegisterNiEditors();
 }

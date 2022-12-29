@@ -64,7 +64,7 @@ namespace SIE
 		RE::TESObjectCELL* LoadTileCells(RE::TESWorldSpace& worldSpace, int16_t centerX, int16_t centerY, int16_t halfGrid) 
 		{
 			static const REL::Relocation<RE::TESObjectCELL*(RE::TESWorldSpace*, int16_t, int16_t)>
-				LoadCell(REL::ID(20460));
+				LoadCell(RELOCATION_ID(20026, 20460));
 
 			RE::TESObjectCELL* result = nullptr;
 			for (int16_t x = centerX - halfGrid; x <= centerX + halfGrid; ++x)
@@ -173,18 +173,13 @@ namespace SIE
 			return;
 		}
 
-		static const REL::Relocation<void*> Renderer(REL::ID(411393));
+		static const REL::Relocation<void*> Renderer(RELOCATION_ID(524907, 411393));
 		static const REL::Relocation<void(void*, int, const char*, uint32_t)> TakeScreenshot(
-			REL::ID(77316));
+			RELOCATION_ID(75522, 77316));
 		static const REL::Relocation<RE::TESObjectCELL*(RE::TESWorldSpace*, int16_t, int16_t)>
-			LoadCell(REL::ID(20460));
-		static const REL::Relocation<bool*> IsPlayerCollisionDisabled(REL::ID(400334));
-		static const REL::Relocation<void()> TogglePlayerCollision(REL::ID(13375));
-		
-		/*static const REL::Relocation<bool*> IsLodBlendingEnabled(REL::ID(390936));
-		*IsLodBlendingEnabled = false;
-		static const REL::Relocation<bool*> IsHDREnabled(REL::ID(391301));
-		*IsHDREnabled = false;*/
+			LoadCell(RELOCATION_ID(20026, 20460));
+		static const REL::Relocation<bool*> IsPlayerCollisionDisabled(RELOCATION_ID(514184, 400334));
+		static const REL::Relocation<void()> TogglePlayerCollision(RELOCATION_ID(13224, 13375));
 
 		logger::info("{} {}", currentX, currentY);
 

@@ -1,5 +1,6 @@
 #include "Hooks.h"
 #include "Gui/Gui.h"
+#include "Gui/NiObjectEditor.h"
 
 #include <RE/B/BSInputDeviceManager.h>
 
@@ -10,6 +11,7 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_message)
 		logger::info("{:*^30}", "HOOKS");
 		Hooks::Install();
 		SIE::Gui::Instance();
+		SIE::RegisterNiEditors();
 	}
 	else if (a_message->type == SKSE::MessagingInterface::kPostPostLoad)
 	{

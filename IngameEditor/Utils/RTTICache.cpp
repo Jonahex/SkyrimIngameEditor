@@ -106,44 +106,23 @@ namespace SIE
 		return rtti.typeName;
 	}
 
-	bool RTTICache::BuildEditor(void* object) 
+	bool RTTICache::BuildEditor(void* object, void* context) 
 	{
 		const auto col = SRTTICache::GetCompleteObjectLocator(object);
 		const auto& rtti = GetFromCache(*col);
 
-		logger::info("building: {}", rtti.typeName);
-
-		std::function<bool(const RTTI::Base&, void*)> buildBaseEditor;
-		buildBaseEditor = [&buildBaseEditor, this](const RTTI::Base& base, void* object)
-		{
-			bool result = false;
-			auto subObject =
-				reinterpret_cast<void*>(reinterpret_cast<uint64_t>(object) + base.offset);
-			RTTI& baseRtti = GetFromCache(*base.typeDescriptor);
-			logger::info("building base: {}", baseRtti.typeName);
-			for (const auto& subBase : baseRtti.bases)
-			{
-				if (buildBaseEditor(subBase, subObject))
-				{
-					result = true;
-				}
-			}
-			if (baseRtti.objectEditor != nullptr && baseRtti.objectEditor(subObject))
-			{
-				result = true;
-			}
-			return result;
-		};
-
 		bool finalResult = false;
 		for (const auto& base : rtti.bases)
 		{
-			if (buildBaseEditor(base, object))
+			auto subObject =
+				reinterpret_cast<void*>(reinterpret_cast<uint64_t>(object) + base.offset);
+			const auto& baseRtti = GetFromCache(*base.typeDescriptor);
+			if (baseRtti.objectEditor != nullptr && baseRtti.objectEditor(subObject, context))
 			{
 				finalResult = true;
 			}
 		}
-		if (rtti.objectEditor != nullptr && rtti.objectEditor(object))
+		if (rtti.objectEditor != nullptr && rtti.objectEditor(object, context))
 		{
 			finalResult = true;
 		}

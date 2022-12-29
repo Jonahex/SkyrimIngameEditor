@@ -34,7 +34,7 @@ namespace SIE
 
 	bool FormEditor(RE::TESForm* form, bool isChanged)
 	{
-		if (isChanged)
+		if (isChanged && !(form->formFlags & RE::TESForm::RecordFlags::kTemporary))
 		{
 			Serializer::Instance().EnqueueForm(*form);
 		}
@@ -89,19 +89,30 @@ namespace SIE
 		return ImGui::TreeNodeBehavior(window->GetID(label), flags, label);
 	}
 
+	bool BSFixedStringEdit(const char* label, RE::BSFixedString& text) 
+	{
+		std::string stdText = text.c_str();
+		if (ImGui::InputText(label, &stdText))
+		{
+			if (stdText.empty())
+			{
+				text = "";
+			}
+			else
+			{
+				text = stdText;
+			}
+			return true;
+		}
+		return false;
+	}
+
 	bool PathEdit(const char* label, const char* text, RE::BSFixedString& path, const char* filter,
 		const char* folder)
 	{
 		ImGui::PushID(label);
 
-		bool result = false;
-
-		std::string texturePath = path.c_str();
-		if (ImGui::InputText("##TextEdit", &texturePath))
-		{
-			path = texturePath;
-			result = true;
-		}
+		bool result = BSFixedStringEdit("##TextEdit", path);
 
 		ImGui::SameLine();
 
@@ -140,6 +151,11 @@ namespace SIE
 	bool TexturePathEdit(const char* label, const char* text, RE::BSFixedString& path)
 	{
 		return PathEdit(label, text, path, ".dds", "Data\\Textures");
+	}
+
+	bool NifTexturePathEdit(const char* label, const char* text, RE::BSFixedString& path)
+	{
+		return PathEdit(label, text, path, ".dds", "Data");
 	}
 
 	bool EspPathEdit(const char* label, const char* text, RE::BSFixedString& path)

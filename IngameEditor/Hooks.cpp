@@ -1,5 +1,6 @@
 #include "Hooks.h"
 
+#include "Serialization/Serializer.h"
 #include "Utils/Hooking.h"
 
 #include "RE/A/Actor.h"
@@ -101,6 +102,21 @@ struct BSXFlags_Load
 	static constexpr size_t idx = 0x18;
 };
 
+struct NiAlphaProperty_Load
+{
+	static void thunk(RE::NiAlphaProperty* property, RE::NiStream& a_stream)
+	{
+		func(property, a_stream);
+
+		if (property->alphaThreshold > 64)
+		{
+			property->alphaThreshold = 64;
+		}
+	}
+	static inline REL::Relocation<decltype(thunk)> func;
+	static constexpr size_t idx = 0x18;
+};
+
 struct TESNPC_Load
 {
 	static bool thunk(RE::TESNPC* form, RE::TESFile* a_mod)
@@ -137,6 +153,17 @@ struct PlayerCharacter_MoveToQueuedLocation
 		player->queuedTargetLoc.location.z = 50000.f;
 
 		func(player);
+	}
+	static inline REL::Relocation<decltype(thunk)> func;
+};
+
+struct WinMain_OnQuitGame
+{
+	static void thunk()
+	{
+		SIE::Serializer::Instance().OnQuitGame();
+
+		func();
 	}
 	static inline REL::Relocation<decltype(thunk)> func;
 };
@@ -1051,16 +1078,27 @@ namespace Hooks
 				RE::VTABLE_TESRegion[0]);
 			stl::write_vfunc<BehaviorGraph::TESForm_SetFormEditorID>(RE::VTABLE_TESRegion[0]);
 
+			{
+				const std::array targets{
+					REL::Relocation<std::uintptr_t>(RE::Offset::WinMain, OFFSET(0x35, 0x1AE)),
+				};
+				for (const auto& target : targets)
+				{
+					stl::write_thunk_call<WinMain_OnQuitGame>(target.address());
+				}
+			}
+
 #ifdef OVERHEAD_TOOL
 			stl::write_vfunc<TESWaterForm_Load>(RE::VTABLE_TESWaterForm[0]);
 			stl::write_vfunc<BSXFlags_Load>(RE::VTABLE_BSXFlags[0]);
+			stl::write_vfunc<NiAlphaProperty_Load>(RE::VTABLE_NiAlphaProperty[0]);
 			//stl::write_vfunc<Actor_InitItemImpl>(RE::VTABLE_Actor[0]);
 			//stl::write_vfunc<Actor_InitItemImpl>(RE::VTABLE_Character[0]);
 			//stl::write_vfunc<TESLandTexture_Load>(RE::VTABLE_TESLandTexture[0]);
 
 			{
 				const std::array targets{
-					REL::Relocation<std::uintptr_t>(REL::ID(40437), 0x26A),
+					REL::Relocation<std::uintptr_t>(RELOCATION_ID(39365, 40437), 0x26A),
 				};
 				for (const auto& target : targets)
 				{
@@ -1070,7 +1108,7 @@ namespace Hooks
 
 			{
 				const std::array targets{
-					REL::Relocation<std::uintptr_t>(REL::ID(18791), 0x2D8),
+					REL::Relocation<std::uintptr_t>(RELOCATION_ID(18368, 18791), 0x2D8),
 				};
 				for (const auto& target : targets)
 				{
@@ -1078,7 +1116,7 @@ namespace Hooks
 				}
 			}
 
-			static const REL::Relocation<bool*> IsLodBlendingEnabled(REL::ID(390936));
+			static const REL::Relocation<bool*> IsLodBlendingEnabled(RELOCATION_ID(513195, 390936));
 			*IsLodBlendingEnabled = false;
 			static const REL::Relocation<bool*> IsHDREnabled(RE::Offset::HDREnabledFlag);
 			*IsHDREnabled = false;

@@ -20,6 +20,7 @@
 #include <RE/T/TESWaterDisplacement.h>
 #include <RE/T/TESWaterForm.h>
 #include <RE/T/TESWaterSystem.h>
+#include <RE/T/TESWorldSpace.h>
 
 #include <magic_enum.hpp>
 
@@ -33,6 +34,15 @@ namespace SIE
 	uint8_t FloatToU8Color(float value)
 	{
 	    return static_cast<uint8_t>(std::min(255.f, 255.f * value));
+	}
+
+	std::string GetCellFullName(const RE::TESObjectCELL& cell)
+	{
+		if (cell.IsInteriorCell())
+		{
+			return GetFullName(cell);
+		}
+		return std::format("{} [{:X}] <{}:({},{})>", cell.GetFormEditorID(), cell.GetFormID(), cell.worldSpace->GetFormEditorID(), cell.cellData.exterior->cellX, cell.cellData.exterior->cellY);
 	}
 
 	std::string GetFullName(const RE::TESForm& form)
@@ -280,6 +290,8 @@ namespace SIE
 							cell3d->children[2]->collisionObject.reset();
 						}
 						cell->autoWaterObjects.clear();
+						cell->placeableWaterObjects.clear();
+						cell->waterFalls.clear();
 						//cell->extraList.RemoveByType(RE::ExtraDataType::kWaterData);
 						loadCellAutoWaterFunc(*unkWaterSingleton, cell, false);
 						//LoadCellAutoWater(*unkWaterSingleton, cell, false);

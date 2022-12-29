@@ -3,6 +3,7 @@
 #include "Core/Core.h"
 #include "Gui/DirectionalAmbientLightingColorsEditor.h"
 #include "Gui/ImageSpaceEditor.h"
+#include "Gui/NiObjectEditor.h"
 #include "Gui/ShaderParticleEditor.h"
 #include "Gui/Utils.h"
 #include "Gui/VolumetricLightingEditor.h"
@@ -11,12 +12,18 @@
 
 #include "3rdparty/ImGuiFileDialog/ImGuiFileDialog.h"
 
+#include <RE/A/Atmosphere.h>
 #include <RE/B/BGSReferenceEffect.h>
 #include <RE/B/BGSShaderParticleGeometryData.h>
 #include <RE/B/BGSSoundDescriptorForm.h>
 #include <RE/B/BGSVolumetricLighting.h>
 #include <RE/C/Calendar.h>
+#include <RE/C/Clouds.h>
+#include <RE/M/Moon.h>
+#include <RE/N/NiCamera.h>
 #include <RE/S/Sky.h>
+#include <RE/S/Stars.h>
+#include <RE/S/Sun.h>
 #include <RE/T/TESImageSpace.h>
 #include <RE/T/TESObjectSTAT.h>
 
@@ -238,6 +245,38 @@ namespace SIE
 
 			return wasEdited;
 		}
+
+		void CloudHelper(const RE::Clouds& clouds) 
+		{ 
+			auto playerCamera = static_cast<RE::NiCamera*>(
+				RE::PlayerCamera::GetSingleton()->cameraRoot->children[0].get());
+			auto& io = ImGui::GetIO();
+
+			size_t index = 0;
+			for (const auto& child : clouds.root->children)
+			{
+				child->UpdateWorldBound();
+				const auto& center = child->worldBound.center;
+				float screenX, screenY, screenZ;
+				if (RE::NiCamera::WorldPtToScreenPt3(playerCamera->worldToCam, playerCamera->port, center, screenX,
+					screenY, screenZ, 0.f) && screenX >= 0.f, screenY >= 0.f && screenX <= 1.f && screenY <= 1.f)
+				{
+					screenX *= io.DisplaySize.x;
+					screenY *= io.DisplaySize.y;
+					ImGui::SetNextWindowPos(ImVec2(screenX, screenY));
+					ImGui::SetNextWindowSize(ImVec2(20.f, 20.f));
+					constexpr ImGuiWindowFlags invisibleWindowFlag =
+						ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDecoration |
+						ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs |
+						ImGuiWindowFlags_NoSavedSettings;
+					const std::string hint = std::to_string(index);
+					ImGui::Begin(hint.c_str(), nullptr, invisibleWindowFlag);
+					ImGui::Text(hint.c_str());
+					ImGui::End();
+				}
+				++index;
+			}
+		}
 	}
 
 	void WeatherEditor(const char* label, RE::TESWeather& weather)
@@ -365,9 +404,11 @@ namespace SIE
 			}
 			if (PushingCollapsingHeader("Cloud Textures"))
 			{
-				for (uint8_t layerIndex = 0; layerIndex < RE::TESWeather::kTotalLayers; ++layerIndex)
+				//SWeatherEditor::CloudHelper(*sky.clouds);
+				uint8_t layerIndex = 0;
+				for (const auto& child : sky.clouds->root->children)
 				{
-					if (PushingCollapsingHeader(std::to_string(layerIndex).c_str()))
+					if (PushingCollapsingHeader(child->name.c_str()))
 					{
 						bool isEnabled = !((weather.cloudLayerDisabledBits >> layerIndex) & 1);
 						resetEditor(CloudLayerCheckbox("Enabled", weather, layerIndex, isEnabled));
@@ -396,6 +437,7 @@ namespace SIE
 						}
 						ImGui::TreePop();
 					}
+					++layerIndex;
 				}
 				ImGui::TreePop();
 			}
@@ -497,6 +539,70 @@ namespace SIE
 					RE::TESWeather::WeatherDataFlag::kPermAurora));
 				resetEditor(FlagEdit("Follows Sun Position", weather.data.flags,
 					RE::TESWeather::WeatherDataFlag::kAuroraFollowsSun));
+				ImGui::TreePop();
+			}
+			ImGui::TreePop();
+		}
+		if (PushingCollapsingHeader("3D"))
+		{
+			if (PushingCollapsingHeader("Atmosphere"))
+			{
+				if (DispatchableNiObjectEditor("", *sky.atmosphere->root))
+				{
+					RE::NiUpdateData updateData;
+					updateData.flags.set(RE::NiUpdateData::Flag::kDirty);
+					sky.atmosphere->root->Update(updateData);
+				}
+				ImGui::TreePop();
+			}
+			if (PushingCollapsingHeader("Stars"))
+			{
+				if (DispatchableNiObjectEditor("", *sky.stars->root))
+				{
+					RE::NiUpdateData updateData;
+					updateData.flags.set(RE::NiUpdateData::Flag::kDirty);
+					sky.stars->root->Update(updateData);
+				}
+				ImGui::TreePop();
+			}
+			if (PushingCollapsingHeader("Sun"))
+			{
+				if (DispatchableNiObjectEditor("", *sky.sun->root))
+				{
+					RE::NiUpdateData updateData;
+					updateData.flags.set(RE::NiUpdateData::Flag::kDirty);
+					sky.sun->root->Update(updateData);
+				}
+				ImGui::TreePop();
+			}
+			if (PushingCollapsingHeader("Clouds"))
+			{
+				if (DispatchableNiObjectEditor("", *sky.clouds->root))
+				{
+					RE::NiUpdateData updateData;
+					updateData.flags.set(RE::NiUpdateData::Flag::kDirty);
+					sky.clouds->root->Update(updateData);
+				}
+				ImGui::TreePop();
+			}
+			if (PushingCollapsingHeader("Masser"))
+			{
+				if (DispatchableNiObjectEditor("", *sky.masser->root))
+				{
+					RE::NiUpdateData updateData;
+					updateData.flags.set(RE::NiUpdateData::Flag::kDirty);
+					sky.masser->root->Update(updateData);
+				}
+				ImGui::TreePop();
+			}
+			if (PushingCollapsingHeader("Secunda"))
+			{
+				if (DispatchableNiObjectEditor("", *sky.secunda->root))
+				{
+					RE::NiUpdateData updateData;
+					updateData.flags.set(RE::NiUpdateData::Flag::kDirty);
+					sky.secunda->root->Update(updateData);
+				}
 				ImGui::TreePop();
 			}
 			ImGui::TreePop();

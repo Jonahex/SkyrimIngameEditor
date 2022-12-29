@@ -43,6 +43,10 @@ namespace SIE
 	{
 		ImGui::PushID(label);
 
+		ImGui::Text(std::format("Cell: {}", GetCellFullName(cell)).c_str());
+
+		FormEditor(&cell, BSFixedStringEdit("Name", cell.fullName));
+
 		RE::TESImageSpace* imageSpace = nullptr;
 		auto extraImageSpace = static_cast<RE::ExtraCellImageSpace*>(
 			cell.extraList.GetByType(RE::ExtraDataType::kCellImageSpace));
@@ -284,8 +288,7 @@ namespace SIE
 				{
 					envMapPath = extraWaterEnvMap->waterEnvMap.textureName;
 				}
-				if (FormEditor(&cell, TexturePathEdit("Water Environment Map",
-										  "Water Environment Map", envMapPath)))
+				if (TexturePathEdit("Water Environment Map", "Water Environment Map", envMapPath))
 				{
 					if (envMapPath.empty())
 					{
@@ -301,6 +304,7 @@ namespace SIE
 						extraWaterEnvMap->waterEnvMap.textureName = envMapPath;
 					}
 					ReloadWaterObjects();
+					FormEditor(&cell, true);
 				}
 			}
 		}
