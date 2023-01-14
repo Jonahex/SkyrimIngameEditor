@@ -4,24 +4,243 @@
 #include "Gui/Utils.h"
 #include "Utils/RTTICache.h"
 
+#include <RE/B/bhkCollisionObject.h>
+#include <RE/B/bhkRigidBody.h>
+#include <RE/B/BSFadeNode.h>
 #include <RE/B/BSGeometry.h>
-#include <RE/B/BSLightingShaderMaterial.h>
+#include <RE/B/BSLightingShaderMaterialEnvmap.h>
+#include <RE/B/BSLightingShaderMaterialEye.h>
+#include <RE/B/BSLightingShaderMaterialFacegenTint.h>
+#include <RE/B/BSLightingShaderMaterialHairTint.h>
+#include <RE/B/BSLightingShaderMaterialMultilayerParallax.h>
+#include <RE/B/BSLightingShaderMaterialParallaxOcc.h>
+#include <RE/B/BSLightingShaderMaterialSnow.h>
 #include <RE/B/BSLightingShaderProperty.h>
 #include <RE/B/BSShaderTextureSet.h>
 #include <RE/B/BSXFlags.h>
+#include <RE/H/hkpRigidBody.h>
 #include <RE/N/NiCollisionObject.h>
 #include <RE/N/NiIntegerExtraData.h>
 #include <RE/N/NiNode.h>
 #include <RE/N/NiSkinInstance.h>
+#include <RE/N/NiStream.h>
 #include <RE/N/NiStringExtraData.h>
 #include <RE/N/NiTimeController.h>
 
 #include <imgui.h>
 
+#include <type_traits>
+
 namespace SIE
 {
+	template<typename RetT, typename BaseT, typename... ArgT>
+	struct ToFunctionPointerHelper
+	{
+		ToFunctionPointerHelper(RetT (BaseT::*ptr)(ArgT...)){};
+
+		using FunctionPointerType = RetT(*)(BaseT*, ArgT...);
+	};
+
+	template<typename T>
+	using FunctionPointerType = typename decltype(ToFunctionPointerHelper(std::declval<T>()))::FunctionPointerType;
+
 	namespace SNiObjectEditor
 	{
+		struct SaveData
+		{
+			std::optional<RE::NiTransform> topTransform;
+		};
+
+		SaveData PreSaveNiObject(RE::NiObject& object)
+		{ 
+			SaveData result;
+			if (auto fadeNode = object.AsFadeNode())
+			{
+				result.topTransform = fadeNode->local;
+				fadeNode->local = {};
+			}
+			return result;
+		}
+
+		void PostSaveNiObject(RE::NiObject& object, const SaveData& saveData)
+		{
+			if (auto fadeNode = object.AsFadeNode(); fadeNode != nullptr && saveData.topTransform.has_value())
+			{
+				fadeNode->local = *saveData.topTransform;
+			}
+		}
+
+		static bool NiObjectEditor(void* object, void* context)
+		{
+			auto& niObject = *static_cast<RE::NiObject*>(object);
+
+			bool wasEdited = false;
+
+			static RE::BSFixedString savePath;
+			FreeMeshPathEdit("SavePath", "", savePath);
+			ImGui::SameLine();
+			if (ImGui::Button("Save"))
+			{
+				auto stream = RE::NiStream::Create();
+				const auto saveData = PreSaveNiObject(niObject);
+				auto objectPtr = RE::NiPointer(&niObject);
+				stream->topObjects.push_back(objectPtr);
+				stream->Save3(savePath.c_str());
+				PostSaveNiObject(niObject, saveData);
+				stream->~NiStream();
+				RE::free(stream);
+			}
+
+			return wasEdited;
+		}
+
+		static bool bhkRefObjectEditor(void* object, void* context)
+		{
+			auto& refObject = *static_cast<RE::bhkWorldObject*>(object);
+
+			bool wasEdited = false;
+
+			/*if (refObject.referencedObject != nullptr)
+			{
+				auto& rttiCache = RTTICache::Instance();
+				const std::string& typeName = rttiCache.GetTypeName(refObject.referencedObject.get());
+				if (PushingCollapsingHeader(std::format("[Referenced Object] <{}>", typeName).c_str()))
+				{
+					if (rttiCache.BuildEditor(refObject.referencedObject.get()))
+					{
+						wasEdited = true;
+					}
+					ImGui::TreePop();
+				}
+			}*/
+
+			return wasEdited;
+		}
+
+		static bool bhkNiCollisionObjectEditor(void* object, void* context)
+		{
+			auto& collisionObject = *static_cast<RE::bhkNiCollisionObject*>(object);
+
+			bool wasEdited = false;
+
+			if (PushingCollapsingHeader("Flags"))
+			{
+				for (const auto& [value, name] :
+					magic_enum::enum_entries<RE::bhkNiCollisionObject::Flag>())
+				{
+					if (value == RE::bhkNiCollisionObject::Flag::kNone)
+					{
+						continue;
+					}
+					if (FlagEdit(name.data(), collisionObject.flags, value))
+					{
+						wasEdited = true;
+					}
+				}
+				ImGui::TreePop();
+			}
+
+			if (collisionObject.body != nullptr)
+			{
+				auto& rttiCache = RTTICache::Instance();
+				const std::string& typeName = rttiCache.GetTypeName(collisionObject.body.get());
+				if (PushingCollapsingHeader(std::format("[Body] <{}>", typeName).c_str()))
+				{
+					if (rttiCache.BuildEditor(collisionObject.body.get()))
+					{
+						wasEdited = true;
+					}
+					ImGui::TreePop();
+				}
+			}
+
+			return wasEdited;
+		}
+
+		static bool bhkEntityEditor(void* object, void* context)
+		{
+			auto& entity = *static_cast<RE::bhkEntity*>(object);
+
+			bool wasEdited = false;
+
+			if (entity.referencedObject != nullptr)
+			{
+				auto havokEntity = static_cast<RE::hkpEntity*>(entity.referencedObject.get());
+
+				float mass = 1.f / havokEntity->motion.inertiaAndMassInv.quad.m128_f32[3];
+				if (ImGui::DragFloat("Mass", &mass, 0.1f, 0.f))
+				{
+					havokEntity->motion.SetMass(mass);
+				}
+				ImGui::DragFloat3("Inertia", havokEntity->motion.inertiaAndMassInv.quad.m128_f32,
+					0.1f, 0.f);
+				ImGui::DragFloat("Friction", &havokEntity->material.friction, 0.01f, 0.f);
+				ImGui::DragFloat("Restitution", &havokEntity->material.restitution, 0.01f, 0.f);
+				float rollingFrictionMultiplier = havokEntity->material.rollingFrictionMultiplier;
+				if (ImGui::DragFloat("Rolling Friction Multiplier", &rollingFrictionMultiplier,
+						0.01f, 0.f))
+				{
+					havokEntity->material.rollingFrictionMultiplier = rollingFrictionMultiplier;
+				}
+			}
+
+			return wasEdited;
+		}
+
+		static bool bhkRigidBodyEditor(void* object, void* context)
+		{
+			auto& rigidBody = *static_cast<RE::bhkRigidBody*>(object);
+
+			bool wasEdited = false;
+
+			if (rigidBody.referencedObject != nullptr)
+			{
+				auto havokBody = static_cast<RE::hkpRigidBody*>(rigidBody.referencedObject.get());
+
+				if (auto shape = havokBody->GetShape(); shape != nullptr && shape->userData != nullptr)
+				{
+					if (void* userData = reinterpret_cast<void*>(shape->userData))
+					{
+						auto& rttiCache = RTTICache::Instance();
+						const std::string& typeName = rttiCache.GetTypeName(shape->userData);
+						if (PushingCollapsingHeader(std::format("[Shape] <{}>", typeName).c_str()))
+						{
+							if (rttiCache.BuildEditor(shape->userData))
+							{
+								wasEdited = true;
+							}
+							ImGui::TreePop();
+						}
+					}
+				}
+			}
+
+			if (!rigidBody.constraints.empty())
+			{
+				size_t constraintIndex = 0;
+				for (auto& constraint : rigidBody.constraints)
+				{
+					if (constraint != nullptr)
+					{
+						auto& rttiCache = RTTICache::Instance();
+						const std::string& typeName = rttiCache.GetTypeName(constraint.get());
+						if (PushingCollapsingHeader(std::format("[Constraint] <{}>##{}", typeName, constraintIndex)
+														.c_str()))
+						{
+							if (rttiCache.BuildEditor(constraint.get()))
+							{
+								wasEdited = true;
+							}
+							ImGui::TreePop();
+						}
+						++constraintIndex;
+					}
+				}
+			}
+
+			return wasEdited;
+		}
+
 		static bool NiIntegerExtraDataEditor(void* object, void* context)
 		{
 			auto& extraData = *static_cast<RE::NiIntegerExtraData*>(object);
@@ -451,6 +670,128 @@ namespace SIE
 			return wasEdited;
 		}
 
+		static bool BSLightingShaderMaterialEnvmapEditor(void* object, void* contextPtr)
+		{
+			auto& material = *static_cast<RE::BSLightingShaderMaterialEnvmap*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat("Envmap Scale", &material.envMapScale, 0.01f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool BSLightingShaderMaterialEyeEditor(void* object, void* contextPtr)
+		{
+			auto& material = *static_cast<RE::BSLightingShaderMaterialEye*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat("Envmap Scale", &material.envMapScale, 0.01f))
+			{
+				wasEdited = true;
+			}
+			if (NiPoint3Editor("Left Eye Center", material.eyeCenter[0], 0.01f))
+			{
+				wasEdited = true;
+			}
+			if (NiPoint3Editor("Right Eye Center", material.eyeCenter[1], 0.01f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool BSLightingShaderMaterialFacegenTintEditor(void* object, void* contextPtr)
+		{
+			auto& material = *static_cast<RE::BSLightingShaderMaterialFacegenTint*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::ColorEdit3("Tint Color", &material.tintColor.red))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool BSLightingShaderMaterialHairTintEditor(void* object, void* contextPtr)
+		{
+			auto& material = *static_cast<RE::BSLightingShaderMaterialHairTint*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::ColorEdit3("Tint Color", &material.tintColor.red))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool BSLightingShaderMaterialMultiLayerParallaxEditor(void* object, void* contextPtr)
+		{
+			auto& material = *static_cast<RE::BSLightingShaderMaterialMultiLayerParallax*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat("Layer Thickness", &material.parallaxLayerThickness, 0.01f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Refraction Scale", &material.parallaxRefractionScale, 0.01f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat2("Inner Layer UV Scale", &material.parallaxInnerLayerUScale, 0.01f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Envmap Scale", &material.envmapScale, 0.01f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool BSLightingShaderMaterialParallaxOccEditor(void* object, void* contextPtr)
+		{
+			auto& material = *static_cast<RE::BSLightingShaderMaterialParallaxOcc*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat("Max Passes", &material.parallaxOccMaxPasses, 0.01f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Scale", &material.parallaxOccScale, 0.01f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool BSLightingShaderMaterialSnowEditor(void* object, void* contextPtr)
+		{
+			auto& material = *static_cast<RE::BSLightingShaderMaterialSnow*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat4("Sparkle Params", &material.sparkleParams.red, 0.01f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
 		static bool BSShaderPropertyEditor(void* object, void* context)
 		{
 			auto& bsShaderProperty = *static_cast<RE::BSShaderProperty*>(object);
@@ -536,6 +877,8 @@ namespace SIE
 	void RegisterNiEditors() 
 	{ 
 		auto& rttiCache = RTTICache::Instance();
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiObject),
+			SNiObjectEditor::NiObjectEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiObjectNET),
 			SNiObjectEditor::NiObjectNETEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiAVObject),
@@ -552,6 +895,27 @@ namespace SIE
 			SNiObjectEditor::BSShaderMaterialEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderMaterialBase),
 			SNiObjectEditor::BSLightingShaderMaterialBaseEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderMaterialEnvmap),
+			SNiObjectEditor::BSLightingShaderMaterialEnvmapEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderMaterialEye),
+			SNiObjectEditor::BSLightingShaderMaterialEyeEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderMaterialFacegenTint),
+			SNiObjectEditor::BSLightingShaderMaterialFacegenTintEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderMaterialHairTint),
+			SNiObjectEditor::BSLightingShaderMaterialHairTintEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderMaterialMultiLayerParallax),
+			SNiObjectEditor::BSLightingShaderMaterialMultiLayerParallaxEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderMaterialParallaxOcc),
+			SNiObjectEditor::BSLightingShaderMaterialParallaxOccEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderMaterialSnow),
+			SNiObjectEditor::BSLightingShaderMaterialSnowEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSXFlags),
 			SNiObjectEditor::BSXFlagsEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiIntegerExtraData),
@@ -560,5 +924,13 @@ namespace SIE
 			SNiObjectEditor::NiStringExtraDataEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSShaderTextureSet),
 			SNiObjectEditor::BSShaderTextureSetEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_bhkRefObject),
+			SNiObjectEditor::bhkRefObjectEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_bhkNiCollisionObject),
+			SNiObjectEditor::bhkNiCollisionObjectEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_bhkEntity),
+			SNiObjectEditor::bhkEntityEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_bhkRigidBody),
+			SNiObjectEditor::bhkRigidBodyEditor);
 	}
 }

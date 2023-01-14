@@ -79,6 +79,7 @@ namespace SIE
 	bool NifTexturePathEdit(const char* label, const char* text, RE::BSFixedString& path);
 	bool EspPathEdit(const char* label, const char* text, RE::BSFixedString& path);
 	bool MeshPathEdit(const char* label, const char* text, RE::BSFixedString& path);
+	bool FreeMeshPathEdit(const char* label, const char* text, RE::BSFixedString& path);
 
 	template <bool NoneAllowed, typename T>
 	bool FormSelector(const char* label, T*& currentForm)

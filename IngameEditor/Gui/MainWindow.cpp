@@ -1,5 +1,6 @@
 #include "Gui/MainWindow.h"
 
+#include "Core/ShaderCache.h"
 #include "Gui/CellEditor.h"
 #include "Gui/Gui.h"
 #include "Gui/TargetEditor.h"
@@ -104,6 +105,8 @@ namespace SIE
 
 	void MainWindow()
 	{
+		ImGui::SetNextWindowSize(ImVec2(512.f, 1024.f),
+			ImGuiCond_FirstUseEver);
 		ImGui::Begin("Ingame Editor");
 
 		{
@@ -214,6 +217,13 @@ namespace SIE
 
 			if (PushingCollapsingHeader("Editor"))
 			{
+				auto& shaderCache = ShaderCache::Instance();
+				bool useCustomShaders = shaderCache.IsEnabled();
+				if (ImGui::Checkbox("Use Custom Shaders", &useCustomShaders))
+				{
+					shaderCache.SetEnabled(useCustomShaders);
+				}
+
 				auto& targetManager = TargetManager::Instance();
 				bool enableHighlight = targetManager.GetEnableTargetHighlight();
 				if (ImGui::Checkbox("Target Highlight", &enableHighlight))
@@ -340,6 +350,11 @@ namespace SIE
 
 		if (PushingCollapsingHeader("Misc"))
 		{
+			if (ImGui::Button("Clear custom shader cache"))
+			{
+				auto& shaderCache = ShaderCache::Instance();
+				shaderCache.Clear();
+			}
 			if (ImGui::Button("Enable all"))
 			{
 				const auto tes = RE::TES::GetSingleton();

@@ -1,5 +1,6 @@
 #include "Hooks.h"
 
+#include "Core/ShaderCache.h"
 #include "Serialization/Serializer.h"
 #include "Utils/Hooking.h"
 
@@ -8,6 +9,7 @@
 #include "RE/A/AIProcess.h"
 #include "RE/B/BGSActionData.h"
 #include "RE/B/BGSDefaultObjectManager.h"
+#include "RE/B/bhkRigidBody.h"
 #include "RE/B/BSAnimationGraphEvent.h"
 #include "RE/B/BSAnimationGraphManager.h"
 #include "RE/B/BShkbAnimationGraph.h"
@@ -47,6 +49,12 @@
 #include <RE/I/ImageSpaceEffectManager.h>
 #include <RE/B/BSXFlags.h>
 #include <RE/B/BSRenderPass.h>
+#include <RE/N/NiStream.h>
+#include <RE/B/bhkCompressedMeshShape.h>
+#include <RE/N/NiRTTI.h>
+#include <RE/N/NiSkinInstance.h>
+#include <RE/N/NiSkinData.h>
+#include <RE/N/NiSkinPartition.h>
 
 #include <iostream>
 #include <tchar.h>
@@ -54,6 +62,254 @@
 #include <stacktrace>
 
 #include <Windows.h>
+
+struct BSLightingShader_SetupGeometry
+{
+	static void thunk(RE::BSShader* shader, RE::BSRenderPass* a_currentPass, std::uint32_t a_flags)
+	{
+		logger::info("{}", a_currentPass->passEnum);
+		func(shader, a_currentPass, a_flags);
+	}
+
+	static inline REL::Relocation<decltype(thunk)> func;
+	static constexpr size_t idx = 0x06;
+};
+
+struct BSShader_BeginTechnique
+{
+	static bool thunk(RE::BSShader* shader, int vertexDescriptor, int pixelDescriptor,
+		bool skipPixelShader)
+	{
+		static REL::Relocation<void(void*, RE::BSGraphics::VertexShader*)> SetVertexShader(
+			RELOCATION_ID(75550, 77351));
+		static REL::Relocation<void(void*, RE::BSGraphics::PixelShader*)> SetPixelShader(
+			RELOCATION_ID(75555, 77356));
+
+		auto& shaderCache = SIE::ShaderCache::Instance();
+		RE::BSGraphics::VertexShader* vertexShader = nullptr;
+		if (shaderCache.IsEnabled())
+		{
+			vertexShader = shaderCache.GetVertexShader(shader->shaderType.get(), vertexDescriptor);
+		}
+		if (vertexShader == nullptr)
+		{
+			for (auto item : shader->vertexShaders)
+			{
+				if (item->id == vertexDescriptor)
+				{
+					vertexShader = item;
+					break;
+				}
+			}
+		}
+		else
+		{
+			for (auto item : shader->vertexShaders)
+			{
+				if (item->id == vertexDescriptor)
+				{
+					if (vertexShader->shaderDesc != item->shaderDesc)
+					{
+						logger::info("{} {}", vertexShader->shaderDesc, item->shaderDesc);
+					}
+					break;
+				}
+			}
+		}
+		RE::BSGraphics::PixelShader* pixelShader = nullptr;
+		if (shaderCache.IsEnabled())
+		{
+			pixelShader = shaderCache.GetPixelShader(shader->shaderType.get(), pixelDescriptor);
+		}
+		if (pixelShader == nullptr)
+		{
+			for (auto item : shader->pixelShaders)
+			{
+				if (item->id == pixelDescriptor)
+				{
+					pixelShader = item;
+					break;
+				}
+			}
+		}
+		if (vertexShader == nullptr || pixelShader == nullptr)
+		{
+			return false;
+		}
+		SetVertexShader(nullptr, vertexShader);
+		if (skipPixelShader)
+		{
+			pixelShader = nullptr;
+		}
+		SetPixelShader(nullptr, pixelShader);
+		return true;
+	}
+
+	static inline REL::Relocation<decltype(thunk)> func;
+};
+
+struct NiSkinInstance_RegisterStreamables
+{
+	static bool thunk(RE::NiSkinInstance* skin, RE::NiStream* stream) 
+	{
+		const bool result = stream->RegisterSaveObject(skin);
+		if (result)
+		{
+			skin->skinData->RegisterStreamables(*stream);
+			if (skin->skinPartition != nullptr)
+			{
+				skin->skinPartition->RegisterStreamables(*stream);
+			}
+			skin->rootParent->RegisterStreamables(*stream);
+			if (skin->skinData->bones > 0)
+			{
+				logger::info("{}", skin->skinData->bones);
+				for (uint32_t boneIndex = 0; boneIndex < skin->skinData->bones; ++boneIndex)
+				{
+					logger::info("{}", reinterpret_cast<void*>(skin->bones[boneIndex]));
+					if (auto bone = skin->bones[boneIndex])
+					{
+						skin->bones[boneIndex]->RegisterStreamables(*stream);
+					}
+				}
+				return true;
+			}
+		}
+		return result;
+	}
+
+	static inline REL::Relocation<decltype(thunk)> func;
+	static constexpr size_t idx = 0x1A;
+};
+
+struct bhkSerializable_SaveBinary
+{
+	static void thunk(RE::bhkSerializable* serializable, RE::NiStream* stream) 
+	{
+		if (auto rigidBody = serializable->AsBhkRigidBody())
+		{
+			std::array<uint8_t, 12> skipData;
+			std::fill_n(skipData.begin(), skipData.size(), 0);
+
+			bool isLoaded = false;
+			auto data = static_cast<RE::bhkRigidBody::SerializedData*>(rigidBody->Unk_2F(isLoaded));
+
+			stream->oStr->write(&data->collisionFilterInfo, 1);
+			const auto shapeKey1 = reinterpret_cast<int32_t>(data->shape);
+			stream->oStr->write(&shapeKey1, 1);
+			stream->oStr->write(&data->broadphaseHandleType, 1);
+			stream->oStr->write(skipData.data(), 3);
+			stream->oStr->write(skipData.data(), 12);
+			stream->oStr->write(&data->unk28, 1);
+			stream->oStr->write(&data->unk2A, 1);
+			stream->oStr->write(skipData.data(), 1);
+			stream->oStr->write(skipData.data(), 4);
+			stream->oStr->write(&data->unk30.collisionFilterInfo, 1);
+			const auto shapeKey2 = reinterpret_cast<int32_t>(data->unk30.shape);
+			stream->oStr->write(&shapeKey2, 1);
+			const auto localFrameKey = reinterpret_cast<int32_t>(data->unk30.localFrame);
+			stream->oStr->write(&localFrameKey, 1);
+			stream->oStr->write(&data->unk30.responseType, 1);
+			stream->oStr->write(&data->unk30.contactPointCallbackDelay, 1);
+			stream->oStr->write(skipData.data(), 1);
+			stream->oStr->write(&data->unk30.translation, 1);
+			stream->oStr->write(&data->unk30.rotation, 1);
+			stream->oStr->write(&data->unk30.linearVelocity, 1);
+			stream->oStr->write(&data->unk30.angularVelocity, 1);
+			stream->oStr->write(&data->unk30.inertiaLocal, 1);
+			stream->oStr->write(&data->unk30.centerOfMassLocal, 1);
+			stream->oStr->write(&data->unk30.mass, 1);
+			stream->oStr->write(&data->unk30.linearDamping, 1);
+			stream->oStr->write(&data->unk30.angularDamping, 1);
+			stream->oStr->write(&data->unk30.timeFactor, 1);
+			stream->oStr->write(&data->unk30.gravityFactor, 1);
+			stream->oStr->write(&data->unk30.friction, 1);
+			stream->oStr->write(&data->unk30.rollingFrictionMultiplier, 1);
+			stream->oStr->write(&data->unk30.restitution, 1);
+			stream->oStr->write(&data->unk30.maxLinearVelocity, 1);
+			stream->oStr->write(&data->unk30.maxAngularVelocity, 1);
+			stream->oStr->write(&data->unk30.allowedPenetrationDepth, 1);
+			stream->oStr->write(&data->unk30.motionType, 1);
+			stream->oStr->write(&data->unk30.isDeactivationIntegrateCounterValid, 1);
+			stream->oStr->write(&data->unk30.deactivationClass, 1);
+			stream->oStr->write(&data->unk30.objectQualityType, 1);
+			stream->oStr->write(&data->unk30.autoRemoveLevel, 1);
+			stream->oStr->write(&data->unk30.unkD1, 1);
+			stream->oStr->write(&data->unk30.numShapeKeysInContactPointProperties, 1);
+			stream->oStr->write(&data->unk30.isForceCollideOntoPpu, 1);
+			stream->oStr->write(skipData.data(), 12);
+
+			rigidBody->Unk_2B(isLoaded);
+		}
+		else if (serializable->GetRTTI() ==
+				 &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_bhkCompressedMeshShape))
+		{
+			std::array<std::uint8_t, 32> skipData;
+			std::fill_n(skipData.begin(), skipData.size(), 0);
+			stream->oStr->write(skipData.data(), 32);
+		}
+		else if (serializable->GetRTTI() ==
+				 &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_bhkMoppBvTreeShape))
+		{
+			bool isLoaded = false;
+			auto data = reinterpret_cast<int32_t*>(serializable->Unk_2F(isLoaded));
+
+			stream->oStr->write(&data[0], 1);
+			stream->oStr->write(&data[2], 1);
+			stream->oStr->write(&data[4], 1);
+			stream->oStr->write(&data[6], 1);
+
+			serializable->Unk_2B(isLoaded);
+		}
+		else if (serializable->GetRTTI() ==
+					 &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_bhkConvexVerticesShape) ||
+				 serializable->GetRTTI() ==
+					 &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_bhkCharControllerShape))
+		{
+			std::array<std::uint8_t, 24> skipData;
+
+			bool isLoaded = false;
+			auto data = reinterpret_cast<int32_t*>(serializable->Unk_2F(isLoaded));
+
+			stream->oStr->write(&data[0], 1);
+			stream->oStr->write(&data[1], 1);
+			stream->oStr->write(skipData.data(), 24);
+
+			serializable->Unk_2B(isLoaded);
+		}
+		else if (serializable->GetRTTI() ==
+				 &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_bhkListShape))
+		{
+			bool isLoaded = false;
+			auto data = reinterpret_cast<int32_t*>(serializable->Unk_2F(isLoaded));
+
+			std::array<std::uint8_t, 24> skipData;
+			stream->oStr->write(&data[0], 1);
+			stream->oStr->write(skipData.data(), 24);
+
+			serializable->Unk_2B(isLoaded);
+		}
+		else if (serializable->GetRTTI() == &*REL::Relocation<RE::NiRTTI*>(RE::NiRTTI_bhkNiTriStripsShape))
+		{
+			bool isLoaded = false;
+			auto data = reinterpret_cast<int32_t*>(serializable->Unk_2F(isLoaded));
+
+			std::array<std::uint8_t, 24> skipData;
+			stream->oStr->write(&data[0], 1);
+			stream->oStr->write(&data[1], 1);
+			stream->oStr->write(skipData.data(), 24);
+			stream->oStr->write(&data[12], 1);
+
+			serializable->Unk_2B(isLoaded);
+		}
+		else
+		{
+			func(serializable, stream);
+		}
+	}
+	static inline REL::Relocation<decltype(thunk)> func;
+	static constexpr size_t idx = 0x1B;
+};
 
 struct TESWaterForm_Load
 {
@@ -1009,6 +1265,44 @@ namespace Hooks
 
 	void OnPostPostLoad()
 	{
+		/*{
+			const auto moduleBase = reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
+
+			const auto saveBinaryAddress =
+				REL::Relocation<std::uintptr_t>(RELOCATION_ID(76234, 78064), 0x3F)
+					.address();
+			SIE::PatchMemory(saveBinaryAddress, PBYTE("\xE9\x59\x00\x00\x00"), 5);
+
+			const auto registerStreamablesAddress =
+				REL::Relocation<std::uintptr_t>(RELOCATION_ID(76233, 78063), 0x21).address();
+			SIE::PatchMemory(registerStreamablesAddress, PBYTE("\xE9\x29\x00\x00\x00"), 5);
+		}*/
+
+		{
+			const std::array targets{
+				REL::Relocation<std::uintptr_t>(RELOCATION_ID(75964, 77790), 0xE8),
+				REL::Relocation<std::uintptr_t>(RELOCATION_ID(76793, 78669), 0x45),
+			};
+			for (const auto& target : targets)
+			{
+				stl::write_thunk_call<bhkSerializable_SaveBinary>(target.address());
+			}
+		}
+		stl::write_vfunc<NiSkinInstance_RegisterStreamables>(RE::VTABLE_NiSkinInstance[0]);
+		stl::write_vfunc<NiSkinInstance_RegisterStreamables>(RE::VTABLE_BSDismemberSkinInstance[0]);
+
+		//stl::write_vfunc<BSLightingShader_SetupGeometry>(RE::VTABLE_BSLightingShader[0]);
+
+		{
+			const std::array targets{
+				REL::Relocation<std::uintptr_t>(RELOCATION_ID(101341, 108328), 0),
+			};
+			for (const auto& target : targets)
+			{
+				stl::write_thunk_jmp<BSShader_BeginTechnique>(target.address());
+			}
+		}
+
 		{
 			stl::write_vfunc<BehaviorGraph::TESForm_GetFormEditorID>(RE::VTABLE_TESObjectREFR[0]);
 			stl::write_vfunc<BehaviorGraph::TESForm_SetFormEditorID>(RE::VTABLE_TESObjectREFR[0]);

@@ -118,6 +118,7 @@ namespace SIE
 
 		if (ImGui::Button("Browse"))
 		{
+			ImGui::SetNextWindowSize(ImVec2(512.f, 512.f), ImGuiCond_FirstUseEver);
 			ImGuiFileDialog::Instance()->OpenDialog(std::to_string(ImGui::GetID(label)),
 				"Choose File", filter, folder);
 		}
@@ -166,5 +167,10 @@ namespace SIE
 	bool MeshPathEdit(const char* label, const char* text, RE::BSFixedString& path)
 	{
 		return PathEdit(label, text, path, ".nif", "Data\\Meshes");
+	}
+
+	bool FreeMeshPathEdit(const char* label, const char* text, RE::BSFixedString& path)
+	{
+		return PathEdit(label, text, path, ".nif", "");
 	}
 }
