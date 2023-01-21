@@ -3,6 +3,7 @@
 #include "Core/ShaderCache.h"
 #include "Serialization/Serializer.h"
 #include "Utils/Hooking.h"
+#include "Utils/TargetManager.h"
 
 #include "RE/A/Actor.h"
 #include "RE/A/ActorSpeedChannel.h"
@@ -55,6 +56,8 @@
 #include <RE/N/NiSkinInstance.h>
 #include <RE/N/NiSkinData.h>
 #include <RE/N/NiSkinPartition.h>
+#include <RE/B/BSGeometry.h>
+#include <RE/B/BSFadeNode.h>
 
 #include <iostream>
 #include <tchar.h>
@@ -63,16 +66,92 @@
 
 #include <Windows.h>
 
+struct RendererShadowState
+{
+	uint32_t stateUpdateFlags;
+	uint8_t pad0[0x8C];
+	uint32_t depthStencilStencilMode;
+	uint32_t stencilRef;
+};
+
 struct BSLightingShader_SetupGeometry
 {
-	static void thunk(RE::BSShader* shader, RE::BSRenderPass* a_currentPass, std::uint32_t a_flags)
+	static void thunk(RE::BSShader* shader, RE::BSRenderPass* pass, uint32_t renderFlags)
 	{
-		logger::info("{}", a_currentPass->passEnum);
-		func(shader, a_currentPass, a_flags);
+		func(shader, pass, renderFlags);
+
+		static REL::Relocation<RendererShadowState*> RendererShadowStateInstance(
+			RE::Offset::RendererShadowStateInstance);
+		if (auto fadeNode = pass->shaderProperty->fadeNode)
+		{
+			const auto& targetManager = SIE::TargetManager::Instance();
+			if (fadeNode->userData != nullptr && fadeNode->userData == targetManager.GetTarget() &&
+				targetManager.GetEnableTargetHighlight())
+			{
+				const bool isOutline = (((pass->passEnum - 1207959597) >> 24) & 0x3F) == 20;
+				auto& rss = *RendererShadowStateInstance;
+				rss.stateUpdateFlags |= 8;
+				if (isOutline)
+				{
+					rss.depthStencilStencilMode = 0x1C;
+					rss.stencilRef = 1;
+				}
+				else
+				{
+					rss.depthStencilStencilMode = 2;
+					rss.stencilRef = 1;
+				}
+			}
+		}
 	}
 
 	static inline REL::Relocation<decltype(thunk)> func;
 	static constexpr size_t idx = 0x06;
+};
+
+struct BSLightingShaderProperty_GetShaderPasses
+{
+	static RE::BSShaderProperty::RenderPassArray* thunk(RE::BSLightingShaderProperty* property,
+		RE::BSGeometry* geometry, uint32_t unk, RE::BSShaderAccumulator* accumulator)
+	{
+		auto result = func(property, geometry, unk, accumulator);
+
+		static REL::Relocation<RE::BSRenderPass*(RE::BSShaderProperty::RenderPassArray*,
+			RE::BSRenderPass*, RE::BSShader*, RE::BSShaderProperty*, RE::BSGeometry*, uint32_t)>
+			AddPass(RELOCATION_ID(98885, 105529));
+		static REL::Relocation<RE::BSShader**> LightingShaderPtr(RELOCATION_ID(528150, 415094));
+		 
+		if (auto fadeNode = property->fadeNode)
+		{
+			const auto& targetManager = SIE::TargetManager::Instance();
+			if (fadeNode->userData != nullptr && fadeNode->userData == targetManager.GetTarget() &&
+				targetManager.GetEnableTargetHighlight())
+			{
+				/*auto actualPass = property->renderPassList.head;
+				RE::BSRenderPass* previousPass = nullptr;
+				while (actualPass != nullptr && actualPass->shaderProperty == property)
+				{
+					logger::info("{} {}", actualPass->shader->shaderType.underlying(),
+						actualPass->passEnum);
+					previousPass = actualPass;
+					actualPass = actualPass->next;
+				}
+				if (previousPass != nullptr)
+				{
+					previousPass->next = AddPass(&property->renderPassList, actualPass, *LightingShaderPtr,
+						property,
+						geometry, (20 << 24) + 1207959597);
+				}*/
+				AddPass(&property->renderPassList, nullptr, *LightingShaderPtr, property,
+					geometry, (20 << 24) + 1207959597);
+			}
+		}
+
+		return result;
+	}
+
+	static inline REL::Relocation<decltype(thunk)> func;
+	static constexpr size_t idx = 0x2A;
 };
 
 struct BSShader_BeginTechnique
@@ -87,7 +166,7 @@ struct BSShader_BeginTechnique
 
 		auto& shaderCache = SIE::ShaderCache::Instance();
 		RE::BSGraphics::VertexShader* vertexShader = nullptr;
-		if (shaderCache.IsEnabled())
+		if (shaderCache.IsEnabledForClass(SIE::ShaderClass::Vertex))
 		{
 			vertexShader = shaderCache.GetVertexShader(shader->shaderType.get(), vertexDescriptor);
 		}
@@ -117,7 +196,7 @@ struct BSShader_BeginTechnique
 			}
 		}
 		RE::BSGraphics::PixelShader* pixelShader = nullptr;
-		if (shaderCache.IsEnabled())
+		if (shaderCache.IsEnabledForClass(SIE::ShaderClass::Pixel))
 		{
 			pixelShader = shaderCache.GetPixelShader(shader->shaderType.get(), pixelDescriptor);
 		}
@@ -128,6 +207,19 @@ struct BSShader_BeginTechnique
 				if (item->id == pixelDescriptor)
 				{
 					pixelShader = item;
+					break;
+				}
+			}
+		}
+		else
+		{
+			for (auto item : shader->pixelShaders)
+			{
+				if (item->id == pixelDescriptor)
+				{
+					pixelShader->constantBuffers[0] = item->constantBuffers[0];
+					pixelShader->constantBuffers[1] = item->constantBuffers[1];
+					pixelShader->constantBuffers[2] = item->constantBuffers[2];
 					break;
 				}
 			}
@@ -1291,7 +1383,10 @@ namespace Hooks
 		stl::write_vfunc<NiSkinInstance_RegisterStreamables>(RE::VTABLE_NiSkinInstance[0]);
 		stl::write_vfunc<NiSkinInstance_RegisterStreamables>(RE::VTABLE_BSDismemberSkinInstance[0]);
 
-		//stl::write_vfunc<BSLightingShader_SetupGeometry>(RE::VTABLE_BSLightingShader[0]);
+		/*stl::write_vfunc<BSLightingShaderProperty_GetShaderPasses>(
+			RE::VTABLE_BSLightingShaderProperty[0]);
+		stl::write_vfunc<BSLightingShader_SetupGeometry>(
+			RE::VTABLE_BSLightingShader[0]);*/
 
 		{
 			const std::array targets{

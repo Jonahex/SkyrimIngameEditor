@@ -13,6 +13,7 @@
 #include "Utils/TargetManager.h"
 
 #include <RE/B/BGSGrassManager.h>
+#include <RE/B/BSRenderPass.h>
 #include <RE/I/ImageSpaceEffect.h>
 #include <RE/I/ImageSpaceEffectManager.h>
 #include <RE/M/Main.h>
@@ -30,6 +31,67 @@ namespace SIE
 {
 	namespace SMainWindow
 	{
+		struct RenderPassCache
+		{
+			struct Pool
+			{
+				RE::BSRenderPass* passes;
+				RE::BSLight** lights;
+				RE::BSRenderPass* firstAvailable;
+				RE::BSRenderPass* lastAvailable;
+				RE::BSSpinLock lock;
+			};
+
+			static constexpr size_t PoolCount = 2;
+
+			std::array<Pool, PoolCount> pools;
+		};
+
+		void RenderPassStatistics() 
+		{
+			static const REL::Relocation<RenderPassCache*> renderPassCache(
+				RELOCATION_ID(528206, 415150));
+
+			for (size_t poolIndex = 0; poolIndex < RenderPassCache::PoolCount; ++poolIndex)
+			{
+				const auto& pool = (*renderPassCache).pools[poolIndex];
+
+				std::array<size_t, static_cast<size_t>(RE::BSShader::Type::Total) + 1> usedPasses;
+				std::fill(usedPasses.begin(), usedPasses.end(), 0);
+
+				constexpr size_t passCount = 65535;
+				for (size_t passIndex = 0; passIndex < passCount; ++passIndex)
+				{
+					const RE::BSRenderPass& pass = pool.passes[passIndex];
+					if (pass.passEnum != 0)
+					{
+						/*logger::info("{} {} {}", pass.passEnum,
+							reinterpret_cast<void*>(pass.shaderProperty),
+							reinterpret_cast<void*>(pass.shader));*/
+						++usedPasses[static_cast<size_t>(RE::BSShader::Type::Total)];
+						if (pass.shaderProperty != nullptr)
+						{
+							++usedPasses[static_cast<size_t>(pass.shader->shaderType.get())];
+						}
+					}
+				}
+
+				ImGui::Text("%d/%d passes used in pool %d including:",
+					usedPasses[static_cast<size_t>(RE::BSShader::Type::Total)], passCount,
+					poolIndex);
+				for (size_t typeIndex = 0;
+					 typeIndex < static_cast<size_t>(RE::BSShader::Type::Total); ++typeIndex)
+				{
+					if (usedPasses[typeIndex] > 0)
+					{
+						ImGui::Text("%d %s passes", usedPasses[typeIndex],
+							magic_enum::enum_name(static_cast<RE::BSShader::Type>(typeIndex))
+								.data());
+					}
+				}
+			}
+		}
+
 		bool VisibilityFlagEdit(const char* label, RE::VISIBILITY flagMask) 
 		{
 			static const REL::Relocation<std::uint32_t*> visibilityFlag(RE::Offset::VisibilityFlag);
@@ -218,10 +280,16 @@ namespace SIE
 			if (PushingCollapsingHeader("Editor"))
 			{
 				auto& shaderCache = ShaderCache::Instance();
-				bool useCustomShaders = shaderCache.IsEnabled();
-				if (ImGui::Checkbox("Use Custom Shaders", &useCustomShaders))
+				for (size_t classIndex = 0; classIndex < static_cast<size_t>(ShaderClass::Total);
+					 ++classIndex)
 				{
-					shaderCache.SetEnabled(useCustomShaders);
+					const auto shaderClass = static_cast<ShaderClass>(classIndex);
+					bool useCustomShaders = shaderCache.IsEnabledForClass(shaderClass);
+					if (ImGui::Checkbox(std::format("Use Custom {} Shaders", magic_enum::enum_name(shaderClass)).c_str(),
+							&useCustomShaders))
+					{
+						shaderCache.SetEnabledForClass(shaderClass, useCustomShaders);
+					}
 				}
 
 				auto& targetManager = TargetManager::Instance();
@@ -347,6 +415,16 @@ namespace SIE
 			}
 		}
 #endif
+
+		if (PushingCollapsingHeader("Statistics"))
+		{
+			if (PushingCollapsingHeader("Render passes"))
+			{
+				SMainWindow::RenderPassStatistics();
+				ImGui::TreePop();
+			}
+			ImGui::TreePop();
+		}
 
 		if (PushingCollapsingHeader("Misc"))
 		{

@@ -168,9 +168,10 @@ VS_OUTPUT main(VS_INPUT input)
 	float4 rawWorldPosition = float4(mul(World, inputPosition), 1);
 	float worldXShift = rawWorldPosition.x - HighDetailRange.x;
 	float worldYShift = rawWorldPosition.y - HighDetailRange.y;
-	float needsZAdjustment = (abs(worldXShift) < HighDetailRange.z) ? (abs(worldYShift) < HighDetailRange.w) : 0;
-	float adjustedZ = input.Position.z - (230 + rawWorldPosition.z / 1e9);
-	inputPosition.z = needsZAdjustment ? adjustedZ : input.Position.z;
+	if ((abs(worldXShift) < HighDetailRange.z) && (abs(worldYShift) < HighDetailRange.w))
+	{
+		inputPosition.z -= (230 + rawWorldPosition.z / 1e9);
+	}
 #endif
 	
 	precise float4 previousInputPosition = inputPosition;
@@ -204,7 +205,7 @@ VS_OUTPUT main(VS_INPUT input)
 	vsout.Position = viewPos;
 
 #if defined (LODLANDNOISE) || defined (LODLANDSCAPE)
-	vsout.Position.z += min(1, 1e-6 * max(0, viewPos.z - 70000)) * 0.5;
+	vsout.Position.z += min(1, 1e-4 * max(0, viewPos.z - 70000)) * 0.5;
 #endif
 	
 	float2 uv = input.TexCoord0.xy * TexcoordOffset.zw + TexcoordOffset.xy;
@@ -573,8 +574,10 @@ cbuffer AlphaTestRefBuffer							: register(b11)
 float GetSoftLightMultiplier(float angle)
 {
     float softLightParam = saturate((LightingEffectParams.x + angle) / (1 + LightingEffectParams.x));
+	float arg1 = (softLightParam * softLightParam) * (3 - 2 * softLightParam);
     float clampedAngle = saturate(angle);
-    float softLigtMul = saturate(softLightParam * softLightParam * (3 - 2 * softLightParam) - clampedAngle * clampedAngle * (3 - 2 * clampedAngle));
+	float arg2 = (clampedAngle * clampedAngle) * (3 - 2 * clampedAngle);
+    float softLigtMul = saturate(arg1 - arg2);
     return softLigtMul;
 }
 
@@ -729,23 +732,24 @@ float GetLandSnowMaskValue(float alpha)
 
 float3 GetLandNormal(float landSnowMask, float3 normal, float2 uv, SamplerState sampNormal, Texture2D<float4> texNormal)
 {
+	float3 landNormal = TransformNormal(normal);
 #if defined (SNOW)
 	if (landSnowMask > 1e-5 && LandscapeTexture5to6IsSnow.w != 1.0)
 	{
-		float2 scaledUv = LandscapeTexture5to6IsSnow.ww * uv;
-		float3 snowNormal = TransformNormal(texNormal.Sample(sampNormal, scaledUv).xyz);
-		float3 originalNormal = normal.xyz * 2.0.xxx + float3(-1, -1, 0);
-		snowNormal = float3(-1, -1, 1) * snowNormal;
-		float normalProjection = dot(originalNormal, snowNormal);
-		snowNormal = originalNormal * normalProjection.xxx - snowNormal * (2 * normal.z);
+		float3 snowNormal =
+			float3(-1, -1, 1) *
+			TransformNormal(texNormal.Sample(sampNormal, LandscapeTexture5to6IsSnow.ww * uv).xyz);
+		landNormal.z += 1;
+		float normalProjection = dot(landNormal, snowNormal);
+		snowNormal = landNormal * normalProjection.xxx - snowNormal * landNormal.z;
 		return normalize(snowNormal);
 	}
 	else
 	{
-		return TransformNormal(normal);
+		return landNormal;
 	}
 #else
-	return TransformNormal(normal);
+	return landNormal;
 #endif
 }
 
@@ -800,7 +804,7 @@ float3 GetFacegenRGBTintBaseColor(float3 rawBaseColor, float2 uv)
 #if defined (WORLD_MAP)
 float3 GetWorldMapNormal(PS_INPUT input, float3 rawNormal, float3 baseColor)
 {
-	float3 normal = rawNormal;
+	float3 normal = normalize(rawNormal);
 #if defined (MODELSPACENORMALS)
 	float3 worldMapNormalSrc = normal.xyz;
 #else
@@ -825,9 +829,9 @@ float3 GetWorldMapNormal(PS_INPUT input, float3 rawNormal, float3 baseColor)
 #endif
 	worldMapColor = normalize(2.0.xxx * (-0.5.xxx + (worldMapColor)));
 #if defined (LODLANDNOISE) || defined (LODLANDSCAPE)
-	float worldMapLandTmp = saturate(19.9999962 * (normal.z - 0.95));
+	float worldMapLandTmp = saturate(19.9999962 * (rawNormal.z - 0.95));
 	worldMapLandTmp = saturate(-(worldMapLandTmp * worldMapLandTmp) * (worldMapLandTmp * -2 + 3) + 1.5);
-	float3 worldMapLandTmp1 = normalize(normal.zxy * float3(0.5, 0, 0) - normal.yzx * float3(0, 0, 0.5));
+	float3 worldMapLandTmp1 = normalize(normal.zxy * float3(1, 0, 0) - normal.yzx * float3(0, 0, 1));
 	float3 worldMapLandTmp2 = normalize(worldMapLandTmp1.yzx * normal.zxy - worldMapLandTmp1.zxy * normal.yzx);
 	float3 worldMapLandTmp3 = normalize(worldMapColor.xxx * worldMapLandTmp1 + worldMapColor.yyy * worldMapLandTmp2 + worldMapColor.zzz * normal.xyz);
 	float worldMapLandTmp4 = dot(worldMapLandTmp3, worldMapLandTmp3);
@@ -836,30 +840,30 @@ float3 GetWorldMapNormal(PS_INPUT input, float3 rawNormal, float3 baseColor)
 		normal.xyz = worldMapLandTmp * (worldMapLandTmp3 - normal.xyz) + normal.xyz;
 	}
 #else
-	normal.xyz = normalize(WorldMapOverlayParametersPS.zzz * (normal.xyz - worldMapColor.xyz) + worldMapColor.xyz);
+	normal.xyz = normalize(
+		WorldMapOverlayParametersPS.zzz * (rawNormal.xyz - worldMapColor.xyz) + worldMapColor.xyz);
 #endif
 	return normal;
 }
 
-float3 GetWorldMapBaseColor(float3 rawBaseColor, float texProjTmp)
+float3 GetWorldMapBaseColor(float3 originalBaseColor, float3 rawBaseColor, float texProjTmp)
 {
-#if (defined (LODLANDNOISE) || defined (LODLANDSCAPE))
-	float lodMultiplier = GetLodLandBlendParameter(rawBaseColor.xyz);
-#elif defined (LODOBJECTSHD)
-	float lodMultiplier = saturate(1.6666666 * (-0.4 + dot(rawBaseColor.xyz, 0.55.xxx)));
-	lodMultiplier = (lodMultiplier * lodMultiplier) * (3 - 2 * lodMultiplier);
-#elif defined (LODOBJECTS)
-#if defined(PROJECTED_UV)
+#if defined(LODOBJECTS) && !defined(PROJECTED_UV)
+	return rawBaseColor;
+#endif
+#if defined (LODLANDSCAPE) || defined(LODOBJECTSHD) || defined(LODLANDNOISE)
+	float lodMultiplier = GetLodLandBlendParameter(originalBaseColor.xyz);
+#elif defined (LODOBJECTS) && defined(PROJECTED_UV)
 	float lodMultiplier = saturate(10 * texProjTmp);
 #else
 	float lodMultiplier = 1;
 #endif
-#endif
 #if defined (LODOBJECTS)
 	float4 lodColorMul = lodMultiplier.xxxx * float4(0.269999981, 0.281000018, 0.441000015, 0.441000015) + float4(0.0780000091, 0.09799999, -0.0349999964, 0.465000004);
 	float4 lodColor = lodColorMul.xyzw * 2.0.xxxx;
+	bool useLodColorZ = lodColorMul.w > 0.5;
 	lodColor.xyz = max(lodColor.xyz, rawBaseColor.xyz);
-	lodColor.w = lodColorMul.w > 0.5 ? lodColor.z : min(lodColor.w, rawBaseColor.z);
+	lodColor.w = useLodColorZ ? lodColor.z : min(lodColor.w, rawBaseColor.z);
 	return (0.5 * lodMultiplier).xxx * (lodColor.xyw - rawBaseColor.xyz) + rawBaseColor;
 #else
 	float4 lodColorMul = lodMultiplier.xxxx * float4(0.199999988, 0.441000015, 0.269999981, 0.281000018) + float4(0.300000012, 0.465000004, 0.0780000091, 0.09799999);
@@ -870,6 +874,15 @@ float3 GetWorldMapBaseColor(float3 rawBaseColor, float texProjTmp)
 #endif
 }
 #endif
+
+float GetSnowParameterY(float texProjTmp, float alpha)
+{
+#if defined (BASE_OBJECT_IS_SNOW)
+	return min(1, texProjTmp + alpha);
+#else
+	return texProjTmp;
+#endif
+}
 
 PS_OUTPUT main(PS_INPUT input)
 {
@@ -888,11 +901,11 @@ PS_OUTPUT main(PS_INPUT input)
 #endif
 	
 #if defined (HAS_VIEW_VECTOR)
-#if defined (SKINNED)
-	float3 viewDirection = normalize(mul(tbn, input.ViewVector.xyz));
-#else
+//#if defined (SKINNED)
+//	float3 viewDirection = normalize(mul(tbn, input.ViewVector.xyz));
+//#else
     float3 viewDirection = normalize(input.ViewVector.xyz);
-#endif
+//#endif
 #else
 	float3 viewDirection = 0.57735026.xxx;
 #endif
@@ -908,12 +921,19 @@ PS_OUTPUT main(PS_INPUT input)
 #else
 	bool useSnowSpecular = false;
 #endif
+
+#if defined(SPARKLE) || !defined(PROJECTED_UV)
+	bool useSnowDecalSpecular = true;
+#else
+	bool useSnowDecalSpecular = false;
+#endif
 	
 	float2 diffuseUv = uv;
 #if defined (SPARKLE)
 	diffuseUv = ProjectedUVParams2.yy * input.TexCoord0.zw;
 #endif
-    float4 baseColor = TexColorSampler.Sample(SampColorSampler, diffuseUv);
+    float4 rawBaseColor = TexColorSampler.Sample(SampColorSampler, diffuseUv);
+	float4 baseColor = rawBaseColor;
 	float landSnowMask1 = GetLandSnowMaskValue(baseColor.w);
 	float4 normalColor = TexNormalSampler.Sample(SampNormalSampler, uv);
 
@@ -946,7 +966,7 @@ PS_OUTPUT main(PS_INPUT input)
 #endif	
 
 #if defined (WORLD_MAP)
-	normal.xyz = GetWorldMapNormal(input, normal.xyz, baseColor.xyz);
+	normal.xyz = GetWorldMapNormal(input, normal.xyz, rawBaseColor.xyz);
 #endif
 	
 #if defined (PBR)
@@ -1089,9 +1109,6 @@ PS_OUTPUT main(PS_INPUT input)
 	float texProjTmp = 0;
 
 #if defined (PROJECTED_UV)
-
-	float projUvSnowMultiplier = 0;
-
 	float2 projNoiseUv = ProjectedUVParams.zz * input.TexCoord0.zw;
 	float projNoise = TexProjNoiseSampler.Sample(SampProjNoiseSampler, projNoiseUv).x;
 	float3 texProj = normalize(input.TexProj);
@@ -1131,13 +1148,9 @@ PS_OUTPUT main(PS_INPUT input)
 		normal.xyz = texProjTmp2.xxx * (finalProjNormal - normal.xyz) + normal.xyz;
 		baseColor.xyz = texProjTmp2.xxx * (projDiffuse * ProjectedUVParams2.xyz - baseColor.xyz) + baseColor.xyz;
 
+		useSnowDecalSpecular = true;
 #if defined (SNOW)
-		projUvSnowMultiplier = -1;
-#if defined (BASE_OBJECT_IS_SNOW)
-		psout.SnowParameters.y = min(1, texProjTmp2 + baseColor.w);
-#else
-		psout.SnowParameters.y = texProjTmp2;
-#endif
+		psout.SnowParameters.y = GetSnowParameterY(texProjTmp2, baseColor.w);
 #endif
 	}
 	else
@@ -1145,13 +1158,9 @@ PS_OUTPUT main(PS_INPUT input)
 		if (texProjTmp > 0)
 		{
 			baseColor.xyz = ProjectedUVParams2.xyz;
+			useSnowDecalSpecular = true;
 #if defined (SNOW)
-			projUvSnowMultiplier = -1;
-#if defined (BASE_OBJECT_IS_SNOW)
-			psout.SnowParameters.y = min(1, texProjTmp + baseColor.w);
-#else
-			psout.SnowParameters.y = texProjTmp;
-#endif
+			psout.SnowParameters.y = GetSnowParameterY(texProjTmp, baseColor.w);
 #endif
 		}
 		else
@@ -1163,20 +1172,20 @@ PS_OUTPUT main(PS_INPUT input)
 	}
 
 #if defined (SPECULAR)
-	useSnowSpecular = projUvSnowMultiplier;
+	useSnowSpecular = useSnowDecalSpecular;
 #endif
-#endif
-
-#if defined (WORLD_MAP)
-	baseColor.xyz = GetWorldMapBaseColor(baseColor.xyz, texProjTmp);
 #endif
 
 #elif defined (SNOW)
-#if defined (LANDSCAPE) && !defined(LOD_LAND_BLEND)
+#if defined (LANDSCAPE)
 	psout.SnowParameters.y = landSnowMask;
 #else
 	psout.SnowParameters.y = baseColor.w;
 #endif
+#endif
+
+#if defined (WORLD_MAP)
+	baseColor.xyz = GetWorldMapBaseColor(rawBaseColor.xyz, baseColor.xyz, texProjTmp);
 #endif
 
 	float3 dirLightColor = DirLightColor.xyz;
@@ -1209,16 +1218,10 @@ PS_OUTPUT main(PS_INPUT input)
 	lightsDiffuseColor += nsDirLightColor.xyz * (saturate(-dirLightAngle) * backLightColor.xyz);
 #endif
 
-	if (useSnowSpecular)
+	if (useSnowSpecular && useSnowDecalSpecular)
 	{
 #if defined (SNOW)
 		lightsSpecularColor = GetSnowSpecularColor(input, modelNormal.xyz, viewDirection);
-#if defined (PROJECTED_UV) && !defined(SPECULAR) && !defined(SPARKLE)
-		if (!lightsSpecularColor.x)
-		{
-			lightsSpecularColor = 0;// projUvSnowMultiplier.xxx;
-		}
-#endif
 #endif
 	}
 	else
@@ -1300,13 +1303,15 @@ PS_OUTPUT main(PS_INPUT input)
 	specularColor += lightsSpecularColor;
 	
 #if defined (CHARACTER_LIGHT)
-	float3 viewVector = float3(0.577350259, 0.577350259, 0.577350259);
-#if defined(HAS_VIEW_VECTOR)
-	viewVector = viewDirection;
-#endif
-	float charLightMul = saturate(dot(viewVector, modelNormal.xyz)) * CharacterLightParams.x + CharacterLightParams.y * saturate(dot(float2(0.164398998, -0.986393988), modelNormal.yz));
+	float charLightMul =
+		saturate(dot(viewDirection, modelNormal.xyz)) * CharacterLightParams.x +
+		CharacterLightParams.y * saturate(dot(float2(0.164398998, -0.986393988), modelNormal.yz));
 	float charLightColor = min(CharacterLightParams.w, max(0, CharacterLightParams.z * TexCharacterLightSampler.Sample(SampCharacterLightSampler, baseShadowUV).x));
 	diffuseColor += (charLightMul * charLightColor).xxx;
+#endif
+
+#if defined(EYE)
+	modelNormal.xyz = input.EyeNormal;
 #endif
 
 #if defined (ENVMAP) || defined (MULTI_LAYER_PARALLAX) || defined(EYE)
@@ -1321,10 +1326,6 @@ PS_OUTPUT main(PS_INPUT input)
 #if defined (GLOWMAP)
 	float3 glowColor = TexGlowSampler.Sample(SampGlowSampler, uv).xyz;
 	emitColor *= glowColor;
-#endif
-
-#if defined(EYE)
-	modelNormal.xyz = input.EyeNormal;
 #endif
 	
 	float3 directionalAmbientColor = mul(DirectionalAmbient, modelNormal);
@@ -1476,7 +1477,10 @@ PS_OUTPUT main(PS_INPUT input)
     screenSpaceNormal = normalize(screenSpaceNormal);
 	
     float tmp = -1e-5 + SSRParams.x;
-    tmp = saturate((glossiness - tmp) / (SSRParams.y - tmp));
+	float tmp3 = (SSRParams.y - tmp);
+	float tmp2 = (glossiness - tmp);
+	float tmp1 = 1 / tmp3;
+	tmp = saturate(tmp1 * tmp2);
     tmp *= tmp * (3 + -2 * tmp);
     psout.ScreenSpaceNormals.w = tmp * SSRParams.w;
 	

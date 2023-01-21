@@ -88,6 +88,12 @@ namespace SIE
 			AdditionalAlphaMask		= 1 << 23,
 		};
 
+		enum class BloodSplatterShaderTechniques
+		{
+			Splatter				= 0,
+			Flare					= 1,
+		};
+
 		static void GetLightingShaderDefines(uint32_t descriptor,
 			D3D_SHADER_MACRO* defines)
 		{
@@ -106,11 +112,31 @@ namespace SIE
 			VanillaGetLightingShaderDefines(descriptor, defines);
 		}
 
+		static void GetBloodSplaterShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
+		{
+			const auto technique =
+				static_cast<BloodSplatterShaderTechniques>(GetTechnique(descriptor));
+
+			if (technique == BloodSplatterShaderTechniques::Splatter)
+			{
+				defines[0] = { "SPLATTER", nullptr };
+				++defines;
+			}
+			else if (technique == BloodSplatterShaderTechniques::Flare)
+			{
+				defines[0] = { "FLARE", nullptr };
+				++defines;
+			}
+		}
+
 		static void GetShaderDefines(RE::BSShader::Type type, uint32_t descriptor,
 			D3D_SHADER_MACRO* defines)
 		{
 			switch (type)
 			{
+			case RE::BSShader::Type::BloodSplatter:
+				GetBloodSplaterShaderDefines(descriptor, defines);
+				break;
 			case RE::BSShader::Type::Lighting:
 				GetLightingShaderDefines(descriptor, defines);
 				break;
@@ -188,6 +214,20 @@ namespace SIE
 				{ "SSRParams", 16 },
 				{ "WorldMapOverlayParametersPS", 17 },
 				{ "AmbientColor", 18 },
+			};
+
+			auto& bloodSplatterVS = result[static_cast<size_t>(RE::BSShader::Type::BloodSplatter)]
+									 [static_cast<size_t>(ShaderClass::Vertex)];
+			bloodSplatterVS = {
+				{ "WorldViewProj", 0 },
+				{ "LightLoc", 1 },
+				{ "Ctrl", 2 },
+			};
+
+			auto& bloodSplatterPS = result[static_cast<size_t>(RE::BSShader::Type::BloodSplatter)]
+										  [static_cast<size_t>(ShaderClass::Pixel)];
+			bloodSplatterPS = {
+				{ "Alpha", 0 },
 			};
 
 			return result;
@@ -339,7 +379,7 @@ namespace SIE
 				D3D11_SHADER_BUFFER_DESC bufferDesc;
 				if (FAILED(bufferReflector->GetDesc(&bufferDesc)))
 				{
-					logger::error("Failed to get buffer {} descriptor for {} shader {}::{}",
+					logger::warn("Failed to get buffer {} descriptor for {} shader {}::{}",
 						bufferName, magic_enum::enum_name(shaderClass),
 						magic_enum::enum_name(shaderType),
 						descriptor);
@@ -432,9 +472,6 @@ namespace SIE
 		std::unique_ptr<RE::BSGraphics::VertexShader> CreateVertexShader(ID3DBlob& shaderData,
 			RE::BSShader::Type type, uint32_t descriptor) 
 		{
-			static std::array<int8_t, 20> constantOffsets{ 0, 12, 24, 28, 32, 36, 40, 52, 56, 0, 4, 8, 0, 4, 8, 12, 0, 0, 0, 0 };
-			static std::array<size_t, 3> bufferIndices{ 4, 3, 15 };
-
 			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
 			static const auto perTechniqueBuffersArray =
 				REL::Relocation<ID3D11Buffer**>(RELOCATION_ID(524755, 411371));
@@ -453,11 +490,6 @@ namespace SIE
 			newShader->byteCodeSize = shaderData.GetBufferSize();
 			newShader->id = descriptor;
 			newShader->shaderDesc = 0;
-
-			/*newShader->constantTable = constantOffsets;
-			newShader->constantBuffers[0].buffer = perTechniqueBuffersArray.get()[bufferIndices[0]];
-			newShader->constantBuffers[1].buffer = perMaterialBuffersArray.get()[bufferIndices[1]];
-			newShader->constantBuffers[2].buffer = perGeometryBuffersArray.get()[bufferIndices[2]];*/
 
 			Microsoft::WRL::ComPtr<ID3D11ShaderReflection> reflector;
 			const auto reflectionResult = D3DReflect(shaderData.GetBufferPointer(), shaderData.GetBufferSize(),
@@ -522,11 +554,6 @@ namespace SIE
 		std::unique_ptr<RE::BSGraphics::PixelShader> CreatePixelShader(ID3DBlob& shaderData,
 			RE::BSShader::Type type, uint32_t descriptor)
 		{
-			static std::array<int8_t, 64> constantOffsets{
-				116, 60, 88, 0, 4, 44, 56, 12, 17, 16, 8, 8, 24, 36, 40, 0, 28, 32, 0, 0, 4, 8, 12, 4, 0, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			};
-			static std::array<size_t, 3> bufferIndices{ 3, 15, 30 };
-
 			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
 			static const auto perTechniqueBuffersArray =
 				REL::Relocation<ID3D11Buffer**>(RELOCATION_ID(524761, 411377));
@@ -538,11 +565,6 @@ namespace SIE
 
 			auto newShader = std::make_unique<RE::BSGraphics::PixelShader>();
 			newShader->id = descriptor;
-
-			/*newShader->constantTable = constantOffsets;
-			newShader->constantBuffers[0].buffer = perTechniqueBuffersArray.get()[bufferIndices[0]];
-			newShader->constantBuffers[1].buffer = perMaterialBuffersArray.get()[bufferIndices[1]];
-			newShader->constantBuffers[2].buffer = perGeometryBuffersArray.get()[bufferIndices[2]];*/
 			
 			Microsoft::WRL::ComPtr<ID3D11ShaderReflection> reflector;
 			const auto reflectionResult = D3DReflect(shaderData.GetBufferPointer(),
@@ -612,7 +634,7 @@ namespace SIE
 	RE::BSGraphics::VertexShader* ShaderCache::GetVertexShader(RE::BSShader::Type type,
 		uint32_t descriptor)
 	{
-		if (type != RE::BSShader::Type::Lighting)
+		if (type != RE::BSShader::Type::Lighting && type != RE::BSShader::Type::BloodSplatter)
 		{
 			return nullptr;
 		}
@@ -642,7 +664,7 @@ namespace SIE
 	RE::BSGraphics::PixelShader* ShaderCache::GetPixelShader(RE::BSShader::Type type,
 		uint32_t descriptor)
 	{
-		if (type != RE::BSShader::Type::Lighting)
+		if (type != RE::BSShader::Type::Lighting && type != RE::BSShader::Type::BloodSplatter)
 		{
 			return nullptr;
 		}
@@ -674,14 +696,22 @@ namespace SIE
 		Clear();
 	}
 
-	bool ShaderCache::IsEnabled() const
-	{ 
-		return isEnabled;
+	bool ShaderCache::IsEnabledForClass(ShaderClass shaderClass) const 
+	{
+		return !(disabledClasses & (1 << static_cast<uint32_t>(shaderClass)));
 	}
 
-	void ShaderCache::SetEnabled(bool value) 
+	void ShaderCache::SetEnabledForClass(ShaderClass shaderClass, bool value)
 	{
-		isEnabled = value; }
+		if (value)
+		{
+			disabledClasses &= ~(1 << static_cast<uint32_t>(shaderClass));
+		}
+		else
+		{
+			disabledClasses |= (1 << static_cast<uint32_t>(shaderClass));
+		}
+	}
 
 	void ShaderCache::Clear()
 	{
