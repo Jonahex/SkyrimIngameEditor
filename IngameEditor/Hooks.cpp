@@ -168,7 +168,7 @@ struct BSShader_BeginTechnique
 		RE::BSGraphics::VertexShader* vertexShader = nullptr;
 		if (shaderCache.IsEnabledForClass(SIE::ShaderClass::Vertex))
 		{
-			vertexShader = shaderCache.GetVertexShader(shader->shaderType.get(), vertexDescriptor);
+			vertexShader = shaderCache.GetVertexShader(*shader, vertexDescriptor);
 		}
 		if (vertexShader == nullptr)
 		{
@@ -198,7 +198,7 @@ struct BSShader_BeginTechnique
 		RE::BSGraphics::PixelShader* pixelShader = nullptr;
 		if (shaderCache.IsEnabledForClass(SIE::ShaderClass::Pixel))
 		{
-			pixelShader = shaderCache.GetPixelShader(shader->shaderType.get(), pixelDescriptor);
+			pixelShader = shaderCache.GetPixelShader(*shader, pixelDescriptor);
 		}
 		if (pixelShader == nullptr)
 		{

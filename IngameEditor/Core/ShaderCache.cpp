@@ -16,9 +16,8 @@ namespace SIE
 		constexpr const char* PixelShaderProfile = "ps_5_0";
 		constexpr const char* ComputeShaderProfile = "cs_5_0";
 
-		static std::wstring GetShaderPath(RE::BSShader::Type type) 
+		static std::wstring GetShaderPath(const std::string_view& name) 
 		{ 
-			const auto name = magic_enum::enum_name(type);
 			return std::format(L"Data/SKSE/plugins/SIE/Shaders/{}.hlsl", std::wstring(name.begin(), name.end()));
 		}
 
@@ -116,6 +115,16 @@ namespace SIE
 			CloudsFade				= 6,
 			Texture					= 7,
 			Sky						= 8,
+		};
+
+		enum class GrassShaderTechniques
+		{
+			RenderDepth				= 8,
+		};
+
+		enum class GrassShaderFlags
+		{
+			AlphaTest				= 0x10000,
 		};
 
 		static void GetLightingShaderDefines(uint32_t descriptor,
@@ -238,11 +247,33 @@ namespace SIE
 			defines[0] = { nullptr, nullptr };
 		}
 
+		static void GetGrassShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
+		{
+			const auto technique = descriptor & 0b1111;
+			if (technique == static_cast<uint32_t>(GrassShaderTechniques::RenderDepth))
+			{
+				defines[0] = { "RENDER_DEPTH", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(GrassShaderFlags::AlphaTest))
+			{
+				defines[0] = { "DO_ALPHA_TEST", nullptr };
+				++defines;
+			}
+			defines[0] = { nullptr, nullptr };
+		}
+
 		static void GetShaderDefines(RE::BSShader::Type type, uint32_t descriptor,
 			D3D_SHADER_MACRO* defines)
 		{
 			switch (type)
 			{
+			case RE::BSShader::Type::Grass:
+				GetGrassShaderDefines(descriptor, defines);
+				break;
+			case RE::BSShader::Type::Sky:
+				GetSkyShaderDefines(descriptor, defines);
+				break;
 			case RE::BSShader::Type::BloodSplatter:
 				GetBloodSplaterShaderDefines(descriptor, defines);
 				break;
@@ -251,9 +282,6 @@ namespace SIE
 				break;
 			case RE::BSShader::Type::DistantTree:
 				GetDistantTreeShaderDefines(descriptor, defines);
-				break;
-			case RE::BSShader::Type::Sky:
-				GetSkyShaderDefines(descriptor, defines);
 				break;
 			}
 		}
@@ -377,6 +405,26 @@ namespace SIE
 										[static_cast<size_t>(ShaderClass::Pixel)];
 			skyPS = {
 				{ "PParams", 0 },
+			};
+
+			auto& grassVS = result[static_cast<size_t>(RE::BSShader::Type::Grass)]
+										[static_cast<size_t>(ShaderClass::Vertex)];
+			grassVS = {
+				{ "WorldViewProj", 0 },
+				{ "WorldView", 1 },
+				{ "World", 2 },
+				{ "PreviousWorld", 3 },
+				{ "FogNearColor", 4 },
+				{ "WindVector", 5 },
+				{ "WindTimer", 6 },
+				{ "DirLightDirection", 7 },
+				{ "PreviousWindTimer", 8 },
+				{ "DirLightColor", 9 },
+				{ "AlphaParam1", 10 },
+				{ "AmbientColor", 11 },
+				{ "AlphaParam2", 12 },
+				{ "ScaleMask", 13 },
+				{ "ShadowClampValue", 14 },
 			};
 
 			return result;
@@ -576,10 +624,11 @@ namespace SIE
 			mapBufferConsts("PerGeometry", bufferSizes[2]);
 		}
 
-		static ID3DBlob* CompileShader(ShaderClass shaderClass, RE::BSShader::Type type,
+		static ID3DBlob* CompileShader(ShaderClass shaderClass, const RE::BSShader& shader,
 			uint32_t descriptor)
 		{
-			const std::wstring path = GetShaderPath(type);
+			const auto type = shader.shaderType.get();
+			const std::wstring path = GetShaderPath(shader.fxpFilename);
 
 			std::array<D3D_SHADER_MACRO, 64> defines;
 			if (shaderClass == ShaderClass::Vertex)
@@ -617,8 +666,8 @@ namespace SIE
 
 				return nullptr;
 			}
-			logger::info("Compiled {} shader {}::{}",
-				magic_enum::enum_name(shaderClass), magic_enum::enum_name(type), descriptor);
+			logger::info("Compiled {} shader {}::{}", magic_enum::enum_name(shaderClass),
+				magic_enum::enum_name(type), descriptor);
 
 			return shaderBlob;
 		}
@@ -783,28 +832,37 @@ namespace SIE
 			}  
 			return newShader;
 		}
+
+		static bool IsSupportedShader(const RE::BSShader& shader)
+		{
+			return shader.shaderType == RE::BSShader::Type::Lighting ||
+			       shader.shaderType == RE::BSShader::Type::BloodSplatter ||
+			       shader.shaderType == RE::BSShader::Type::DistantTree ||
+			       shader.shaderType == RE::BSShader::Type::Sky ||
+			       shader.shaderType == RE::BSShader::Type::Grass;
+		}
 	}
 
-	RE::BSGraphics::VertexShader* ShaderCache::GetVertexShader(RE::BSShader::Type type,
+	RE::BSGraphics::VertexShader* ShaderCache::GetVertexShader(const RE::BSShader& shader,
 		uint32_t descriptor)
 	{
-		if (type != RE::BSShader::Type::Lighting && type != RE::BSShader::Type::BloodSplatter &&
-			type != RE::BSShader::Type::DistantTree && type != RE::BSShader::Type::Sky)
+		if (!SShaderCache::IsSupportedShader(shader))
 		{
 			return nullptr;
 		}
 
-		auto& typeCache = vertexShaders[static_cast<size_t>(type)];
+		auto& typeCache = vertexShaders[static_cast<size_t>(shader.shaderType.underlying())];
 		auto it = typeCache.find(descriptor);
 		if (it == typeCache.end())
 		{
 			const auto shaderBlob =
-				SShaderCache::CompileShader(ShaderClass::Vertex, type, descriptor);
+				SShaderCache::CompileShader(ShaderClass::Vertex, shader, descriptor);
 			if (shaderBlob == nullptr)
 			{
 				return nullptr;
 			}
-			if (auto newShader = SShaderCache::CreateVertexShader(*shaderBlob, type, descriptor))
+			if (auto newShader = SShaderCache::CreateVertexShader(*shaderBlob,
+					shader.shaderType.get(), descriptor))
 			{
 				it = typeCache.insert_or_assign(descriptor, std::move(newShader)).first;
 			}
@@ -816,26 +874,26 @@ namespace SIE
 		return it->second.get();
 	}
 
-	RE::BSGraphics::PixelShader* ShaderCache::GetPixelShader(RE::BSShader::Type type,
+	RE::BSGraphics::PixelShader* ShaderCache::GetPixelShader(const RE::BSShader& shader,
 		uint32_t descriptor)
 	{
-		if (type != RE::BSShader::Type::Lighting && type != RE::BSShader::Type::BloodSplatter &&
-			type != RE::BSShader::Type::DistantTree && type != RE::BSShader::Type::Sky)
+		if (!SShaderCache::IsSupportedShader(shader))
 		{
 			return nullptr;
 		}
 
-		auto& typeCache = pixelShaders[static_cast<size_t>(type)];
+		auto& typeCache = pixelShaders[static_cast<size_t>(shader.shaderType.underlying())];
 		auto it = typeCache.find(descriptor);
 		if (it == typeCache.end())
 		{
 			const auto shaderBlob =
-				SShaderCache::CompileShader(ShaderClass::Pixel, type, descriptor);
+				SShaderCache::CompileShader(ShaderClass::Pixel, shader, descriptor);
 			if (shaderBlob == nullptr)
 			{
 				return nullptr;
 			}
-			if (auto newShader = SShaderCache::CreatePixelShader(*shaderBlob, type, descriptor))
+			if (auto newShader = SShaderCache::CreatePixelShader(*shaderBlob,
+					shader.shaderType.get(), descriptor))
 			{
 				it = typeCache.insert_or_assign(descriptor, std::move(newShader)).first;
 			}

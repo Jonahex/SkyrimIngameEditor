@@ -28,8 +28,9 @@ namespace SIE
 
 		void Clear();
 
-		RE::BSGraphics::VertexShader* GetVertexShader(RE::BSShader::Type type, uint32_t descriptor);
-		RE::BSGraphics::PixelShader* GetPixelShader(RE::BSShader::Type type, uint32_t descriptor);
+		RE::BSGraphics::VertexShader* GetVertexShader(const RE::BSShader& shader, uint32_t descriptor);
+		RE::BSGraphics::PixelShader* GetPixelShader(const RE::BSShader& shader,
+			uint32_t descriptor);
 
 	private:
 		~ShaderCache();
