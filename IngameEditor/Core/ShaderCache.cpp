@@ -127,6 +127,16 @@ namespace SIE
 			AlphaTest				= 0x10000,
 		};
 
+		enum class ParticleShaderTechniques
+		{
+			Particles				= 0,
+			ParticlesGryColor		= 1,
+			ParticlesGryAlpha		= 2,
+			ParticlesGryColorAlpha	= 3,
+			EnvCubeSnow				= 4,
+			EnvCubeRain				= 5,
+		};
+
 		static void GetLightingShaderDefines(uint32_t descriptor,
 			D3D_SHADER_MACRO* defines)
 		{
@@ -263,6 +273,49 @@ namespace SIE
 			defines[0] = { nullptr, nullptr };
 		}
 
+		static void GetParticleShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
+		{
+			const auto technique = static_cast<ParticleShaderTechniques>(descriptor);
+			switch (technique)
+			{
+			case ParticleShaderTechniques::ParticlesGryColor:
+				{
+					defines[0] = { "GRAYSCALE_TO_COLOR", nullptr };
+					++defines;
+					break;
+				}
+			case ParticleShaderTechniques::ParticlesGryAlpha:
+				{
+					defines[0] = { "GRAYSCALE_TO_ALPHA", nullptr };
+					++defines;
+					break;
+				}
+			case ParticleShaderTechniques::ParticlesGryColorAlpha:
+				{
+					defines[0] = { "GRAYSCALE_TO_COLOR", nullptr };
+					defines[1] = { "GRAYSCALE_TO_ALPHA", nullptr };
+					defines += 2;
+					break;
+				}
+			case ParticleShaderTechniques::EnvCubeSnow:
+				{
+					defines[0] = { "ENVCUBE", nullptr };
+					defines[1] = { "SNOW", nullptr };
+					defines += 2;
+					break;
+				}
+			case ParticleShaderTechniques::EnvCubeRain:
+				{
+					defines[0] = { "ENVCUBE", nullptr };
+					defines[1] = { "RAIN", nullptr };
+					defines += 2;
+					break;
+				}
+			}
+
+			defines[0] = { nullptr, nullptr };
+		}
+
 		static void GetShaderDefines(RE::BSShader::Type type, uint32_t descriptor,
 			D3D_SHADER_MACRO* defines)
 		{
@@ -282,6 +335,9 @@ namespace SIE
 				break;
 			case RE::BSShader::Type::DistantTree:
 				GetDistantTreeShaderDefines(descriptor, defines);
+				break;
+			case RE::BSShader::Type::Particle:
+				GetParticleShaderDefines(descriptor, defines);
 				break;
 			}
 		}
@@ -427,6 +483,33 @@ namespace SIE
 				{ "ShadowClampValue", 14 },
 			};
 
+			auto& particleVS = result[static_cast<size_t>(RE::BSShader::Type::Particle)]
+								[static_cast<size_t>(ShaderClass::Vertex)];
+			particleVS = {
+				{ "WorldViewProj", 0 },
+				{ "PrevWorldViewProj", 1 },
+				{ "PrecipitationOcclusionWorldViewProj", 2 },
+				{ "fVars0", 3 },
+				{ "fVars1", 4 },
+				{ "fVars2", 5 },
+				{ "fVars3", 6 },
+				{ "fVars4", 7 },
+				{ "Color1", 8 },
+				{ "Color2", 9 },
+				{ "Color3", 10 },
+				{ "Velocity", 11 },
+				{ "Acceleration", 12 },
+				{ "ScaleAdjust", 13 },
+				{ "Wind", 14 },
+			};
+
+			auto& particlePS = result[static_cast<size_t>(RE::BSShader::Type::Particle)]
+								[static_cast<size_t>(ShaderClass::Pixel)];
+			particlePS = {
+				{ "ColorScale", 0 },
+				{ "TextureSize", 1 },
+			};
+
 			return result;
 		}
 
@@ -463,7 +546,7 @@ namespace SIE
 			return result;
 		}
 
-		void AddAttribute(uint64_t& desc, RE::BSGraphics::Vertex::Attribute attribute) 
+		static void AddAttribute(uint64_t& desc, RE::BSGraphics::Vertex::Attribute attribute) 
 		{ 
 			desc |= ((1ull << (44 + attribute)) | (1ull << (54 + attribute)) |
 					 (0b1111ull << (4 * attribute + 4)));
@@ -517,6 +600,10 @@ namespace SIE
 								 inputDesc.SemanticIndex == 0)
 						{
 							AddAttribute(vertexDesc, RE::BSGraphics::Vertex::VA_TEXCOORD0);
+						}
+						else if (semanticName == "TEXCOORD" && inputDesc.SemanticIndex == 1)
+						{
+							AddAttribute(vertexDesc, RE::BSGraphics::Vertex::VA_TEXCOORD1);
 						}
 						else if (semanticName == "NORMAL" &&
 								 inputDesc.SemanticIndex == 0)
@@ -839,7 +926,8 @@ namespace SIE
 			       shader.shaderType == RE::BSShader::Type::BloodSplatter ||
 			       shader.shaderType == RE::BSShader::Type::DistantTree ||
 			       shader.shaderType == RE::BSShader::Type::Sky ||
-			       shader.shaderType == RE::BSShader::Type::Grass;
+			       shader.shaderType == RE::BSShader::Type::Grass ||
+			       shader.shaderType == RE::BSShader::Type::Particle;
 		}
 	}
 
