@@ -211,7 +211,7 @@ struct BSShader_BeginTechnique
 				}
 			}
 		}
-		else
+		/*else
 		{
 			for (auto item : shader->pixelShaders)
 			{
@@ -223,7 +223,7 @@ struct BSShader_BeginTechnique
 					break;
 				}
 			}
-		}
+		}*/
 		if (vertexShader == nullptr || pixelShader == nullptr)
 		{
 			return false;
@@ -1513,38 +1513,38 @@ namespace Hooks
 			isem->shaderInfo.blurCSShaderInfo->isEnabled = false;
 #endif
 		
-#ifdef SKYRIM_SUPPORT_AE
-			{
-				const auto renderPassCacheCtor = REL::ID(107500);
-				const int32_t passCount = 4194240;
-				const int32_t passSize = 4194240 * sizeof(RE::BSRenderPass);
-				const int32_t lightsCount = passCount * 16;
-				const int32_t lightsSize = lightsCount * sizeof(void*);
-				const int32_t lastPassIndex = passCount - 1;
-				const int32_t lastPassOffset =
-					(passCount - 1) * sizeof(RE::BSRenderPass);
-				const int32_t lastPassNextOffset =
-					(passCount - 1) * sizeof(RE::BSRenderPass) + offsetof(RE::BSRenderPass, next);
-				SIE::PatchMemory(
-					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0x76).address(),
-					reinterpret_cast<const uint8_t*>(&lightsSize), 4);
-				SIE::PatchMemory(
-					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0xAD).address(),
-					reinterpret_cast<const uint8_t*>(&passSize), 4);
-				SIE::PatchMemory(
-					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0xCB).address(),
-					reinterpret_cast<const uint8_t*>(&lastPassIndex), 4);
-				SIE::PatchMemory(
-					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0xF0).address(),
-					reinterpret_cast<const uint8_t*>(&lastPassNextOffset), 4);
-				SIE::PatchMemory(
-					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0xFD).address(),
-					reinterpret_cast<const uint8_t*>(&lastPassOffset), 4);
-				SIE::PatchMemory(
-					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0x191).address(),
-					reinterpret_cast<const uint8_t*>(&passCount), 4);
-			}
-#endif
+//#ifdef SKYRIM_SUPPORT_AE
+//			{
+//				const auto renderPassCacheCtor = REL::ID(107500);
+//				const int32_t passCount = 4194240;
+//				const int32_t passSize = 4194240 * sizeof(RE::BSRenderPass);
+//				const int32_t lightsCount = passCount * 16;
+//				const int32_t lightsSize = lightsCount * sizeof(void*);
+//				const int32_t lastPassIndex = passCount - 1;
+//				const int32_t lastPassOffset =
+//					(passCount - 1) * sizeof(RE::BSRenderPass);
+//				const int32_t lastPassNextOffset =
+//					(passCount - 1) * sizeof(RE::BSRenderPass) + offsetof(RE::BSRenderPass, next);
+//				SIE::PatchMemory(
+//					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0x76).address(),
+//					reinterpret_cast<const uint8_t*>(&lightsSize), 4);
+//				SIE::PatchMemory(
+//					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0xAD).address(),
+//					reinterpret_cast<const uint8_t*>(&passSize), 4);
+//				SIE::PatchMemory(
+//					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0xCB).address(),
+//					reinterpret_cast<const uint8_t*>(&lastPassIndex), 4);
+//				SIE::PatchMemory(
+//					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0xF0).address(),
+//					reinterpret_cast<const uint8_t*>(&lastPassNextOffset), 4);
+//				SIE::PatchMemory(
+//					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0xFD).address(),
+//					reinterpret_cast<const uint8_t*>(&lastPassOffset), 4);
+//				SIE::PatchMemory(
+//					REL::Relocation<std::uintptr_t>(renderPassCacheCtor, 0x191).address(),
+//					reinterpret_cast<const uint8_t*>(&passCount), 4);
+//			}
+//#endif
 
 			//stl::write_vfunc<BSLightingShader_SetupMaterial>(RE::VTABLE_BSLightingShader[0]);
 

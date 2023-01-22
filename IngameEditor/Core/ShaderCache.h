@@ -21,6 +21,8 @@ namespace SIE
 			return instance;
 		}
 
+		bool IsEnabled() const;
+		void SetEnabled(bool value);
 		bool IsEnabledForClass(ShaderClass shaderClass) const;
 		void SetEnabledForClass(ShaderClass shaderClass, bool value);
 
@@ -39,6 +41,7 @@ namespace SIE
 			static_cast<size_t>(RE::BSShader::Type::Total)>
 			pixelShaders;
 
+		bool isEnabled = true;
 		uint32_t disabledClasses = 0;
 	};
 }

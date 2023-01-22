@@ -18,8 +18,8 @@ struct VS_OUTPUT
 cbuffer PerGeometry						: register(b2)
 {
 	row_major float4x4 WorldViewProj	: packoffset(c0);
-	float4 LightLoc						: packoffset(c1);
-	float Ctrl							: packoffset(c2);	// fBloodSplatterFlareOffsetScale
+	float4 LightLoc						: packoffset(c4);
+	float Ctrl							: packoffset(c5);	// fBloodSplatterFlareOffsetScale
 };
 
 VS_OUTPUT main(VS_INPUT input)

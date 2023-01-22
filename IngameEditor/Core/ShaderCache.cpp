@@ -94,6 +94,17 @@ namespace SIE
 			Flare					= 1,
 		};
 
+		enum class DistantTreeShaderTechniques
+		{
+			None					= 0,
+			RenderDepth				= 1,
+		};
+
+		enum class DistantTreeShaderFlags
+		{
+			DoAlphaTest				= 0x10000,
+		};
+
 		static void GetLightingShaderDefines(uint32_t descriptor,
 			D3D_SHADER_MACRO* defines)
 		{
@@ -114,19 +125,33 @@ namespace SIE
 
 		static void GetBloodSplaterShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
 		{
-			const auto technique =
-				static_cast<BloodSplatterShaderTechniques>(GetTechnique(descriptor));
-
-			if (technique == BloodSplatterShaderTechniques::Splatter)
+			if (descriptor == static_cast<uint32_t>(BloodSplatterShaderTechniques::Splatter))
 			{
 				defines[0] = { "SPLATTER", nullptr };
 				++defines;
 			}
-			else if (technique == BloodSplatterShaderTechniques::Flare)
+			else if (descriptor == static_cast<uint32_t>(BloodSplatterShaderTechniques::Flare))
 			{
 				defines[0] = { "FLARE", nullptr };
 				++defines;
 			}
+			defines[0] = { nullptr, nullptr };
+		}
+
+		static void GetDistantTreeShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
+		{
+			const auto technique = descriptor & 1;
+			if (technique == static_cast<uint32_t>(DistantTreeShaderTechniques::RenderDepth))
+			{
+				defines[0] = { "RENDER_DEPTH", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(DistantTreeShaderFlags::DoAlphaTest))
+			{
+				defines[0] = { "DO_ALPHA_TEST", nullptr };
+				++defines;
+			}
+			defines[0] = { nullptr, nullptr };
 		}
 
 		static void GetShaderDefines(RE::BSShader::Type type, uint32_t descriptor,
@@ -139,6 +164,9 @@ namespace SIE
 				break;
 			case RE::BSShader::Type::Lighting:
 				GetLightingShaderDefines(descriptor, defines);
+				break;
+			case RE::BSShader::Type::DistantTree:
+				GetDistantTreeShaderDefines(descriptor, defines);
 				break;
 			}
 		}
@@ -228,6 +256,22 @@ namespace SIE
 										  [static_cast<size_t>(ShaderClass::Pixel)];
 			bloodSplatterPS = {
 				{ "Alpha", 0 },
+			};
+
+			auto& distantTreeVS = result[static_cast<size_t>(RE::BSShader::Type::DistantTree)]
+										  [static_cast<size_t>(ShaderClass::Vertex)];
+			distantTreeVS = {
+				{ "WorldViewProj", 1 },
+				{ "World", 2 },
+				{ "PreviousWorld", 3 },
+				{ "FogParam", 4 },
+			};
+
+			auto& distantTreePS = result[static_cast<size_t>(RE::BSShader::Type::DistantTree)]
+										  [static_cast<size_t>(ShaderClass::Pixel)];
+			distantTreePS = {
+				{ "DiffuseColor", 0 },
+				{ "AmbientColor", 1 },
 			};
 
 			return result;
@@ -338,6 +382,11 @@ namespace SIE
 						else if (semanticName == "BLENDWEIGHT" && inputDesc.SemanticIndex == 0)
 						{
 							AddAttribute(vertexDesc, RE::BSGraphics::Vertex::VA_SKINNING);
+						}
+						else if (semanticName == "TEXCOORD" && inputDesc.SemanticIndex >= 4 &&
+								 inputDesc.SemanticIndex <= 7)
+						{
+							AddAttribute(vertexDesc, RE::BSGraphics::Vertex::VA_INSTANCEDATA);
 						}
 						else if (semanticName == "TEXCOORD" &&
 								 inputDesc.SemanticIndex == 2)
@@ -634,7 +683,8 @@ namespace SIE
 	RE::BSGraphics::VertexShader* ShaderCache::GetVertexShader(RE::BSShader::Type type,
 		uint32_t descriptor)
 	{
-		if (type != RE::BSShader::Type::Lighting && type != RE::BSShader::Type::BloodSplatter)
+		if (type != RE::BSShader::Type::Lighting && type != RE::BSShader::Type::BloodSplatter &&
+			type != RE::BSShader::Type::DistantTree)
 		{
 			return nullptr;
 		}
@@ -664,7 +714,7 @@ namespace SIE
 	RE::BSGraphics::PixelShader* ShaderCache::GetPixelShader(RE::BSShader::Type type,
 		uint32_t descriptor)
 	{
-		if (type != RE::BSShader::Type::Lighting && type != RE::BSShader::Type::BloodSplatter)
+		if (type != RE::BSShader::Type::Lighting && type != RE::BSShader::Type::BloodSplatter && type != RE::BSShader::Type::DistantTree)
 		{
 			return nullptr;
 		}
@@ -698,7 +748,7 @@ namespace SIE
 
 	bool ShaderCache::IsEnabledForClass(ShaderClass shaderClass) const 
 	{
-		return !(disabledClasses & (1 << static_cast<uint32_t>(shaderClass)));
+		return isEnabled && !(disabledClasses & (1 << static_cast<uint32_t>(shaderClass)));
 	}
 
 	void ShaderCache::SetEnabledForClass(ShaderClass shaderClass, bool value)
@@ -731,5 +781,15 @@ namespace SIE
 			}
 			shaders.clear();
 		}
+	}
+
+	bool ShaderCache::IsEnabled() const
+	{ 
+		return isEnabled;
+	}
+
+	void ShaderCache::SetEnabled(bool value)
+	{ 
+		isEnabled = value;
 	}
 }

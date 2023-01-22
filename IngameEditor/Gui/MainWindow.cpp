@@ -280,15 +280,25 @@ namespace SIE
 			if (PushingCollapsingHeader("Editor"))
 			{
 				auto& shaderCache = ShaderCache::Instance();
-				for (size_t classIndex = 0; classIndex < static_cast<size_t>(ShaderClass::Total);
-					 ++classIndex)
+				bool useCustomShaders = shaderCache.IsEnabled();
+				if (ImGui::Checkbox("Use Custom Shaders", &useCustomShaders))
 				{
-					const auto shaderClass = static_cast<ShaderClass>(classIndex);
-					bool useCustomShaders = shaderCache.IsEnabledForClass(shaderClass);
-					if (ImGui::Checkbox(std::format("Use Custom {} Shaders", magic_enum::enum_name(shaderClass)).c_str(),
-							&useCustomShaders))
+					shaderCache.SetEnabled(useCustomShaders);
+				}
+				if (useCustomShaders)
+				{
+					for (size_t classIndex = 0;
+						 classIndex < static_cast<size_t>(ShaderClass::Total); ++classIndex)
 					{
-						shaderCache.SetEnabledForClass(shaderClass, useCustomShaders);
+						const auto shaderClass = static_cast<ShaderClass>(classIndex);
+						bool useCustomClassShaders = shaderCache.IsEnabledForClass(shaderClass);
+						if (ImGui::Checkbox(std::format("Use Custom {} Shaders",
+												magic_enum::enum_name(shaderClass))
+												.c_str(),
+								&useCustomClassShaders))
+						{
+							shaderCache.SetEnabledForClass(shaderClass, useCustomClassShaders);
+						}
 					}
 				}
 
