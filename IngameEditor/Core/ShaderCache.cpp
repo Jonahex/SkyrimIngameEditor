@@ -96,13 +96,26 @@ namespace SIE
 
 		enum class DistantTreeShaderTechniques
 		{
-			None					= 0,
-			RenderDepth				= 1,
+			DistantTreeBlock		= 0,
+			Depth					= 1,
 		};
 
 		enum class DistantTreeShaderFlags
 		{
-			DoAlphaTest				= 0x10000,
+			AlphaTest				= 0x10000,
+		};
+
+		enum class SkyShaderTechniques
+		{
+			SunOcclude				= 0,
+			SunGlare				= 1,
+			MoonAndStarsMask		= 2,
+			Stars					= 3,
+			Clouds					= 4,
+			CloudsLerp				= 5,
+			CloudsFade				= 6,
+			Texture					= 7,
+			Sky						= 8,
 		};
 
 		static void GetLightingShaderDefines(uint32_t descriptor,
@@ -141,16 +154,87 @@ namespace SIE
 		static void GetDistantTreeShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
 		{
 			const auto technique = descriptor & 1;
-			if (technique == static_cast<uint32_t>(DistantTreeShaderTechniques::RenderDepth))
+			if (technique == static_cast<uint32_t>(DistantTreeShaderTechniques::Depth))
 			{
 				defines[0] = { "RENDER_DEPTH", nullptr };
 				++defines;
 			}
-			if (descriptor & static_cast<uint32_t>(DistantTreeShaderFlags::DoAlphaTest))
+			if (descriptor & static_cast<uint32_t>(DistantTreeShaderFlags::AlphaTest))
 			{
 				defines[0] = { "DO_ALPHA_TEST", nullptr };
 				++defines;
 			}
+			defines[0] = { nullptr, nullptr };
+		}
+
+		static void GetSkyShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
+		{
+			const auto technique = static_cast<SkyShaderTechniques>(descriptor);
+			switch (technique)
+			{
+			case SkyShaderTechniques::SunOcclude:
+				{
+					defines[0] = { "OCCLUSION", nullptr };
+					++defines;
+					break;
+				}
+			case SkyShaderTechniques::SunGlare:
+				{
+					defines[0] = { "TEX", nullptr };
+					defines[1] = { "DITHER", nullptr };
+					defines += 2;
+					break;
+				}
+			case SkyShaderTechniques::MoonAndStarsMask:
+				{
+					defines[0] = { "TEX", nullptr };
+					defines[1] = { "MOONMASK", nullptr };
+					defines += 2;
+					break;
+				}
+			case SkyShaderTechniques::Stars:
+				{
+					defines[0] = { "HORIZFADE", nullptr };
+					++defines;
+					break;
+				}
+			case SkyShaderTechniques::Clouds:
+				{
+					defines[0] = { "TEX", nullptr };
+					defines[1] = { "CLOUDS", nullptr };
+					defines += 2;
+					break;
+				}
+			case SkyShaderTechniques::CloudsLerp:
+				{
+					defines[0] = { "TEX", nullptr };
+					defines[1] = { "CLOUDS", nullptr };
+					defines[2] = { "TEXLERP", nullptr };
+					defines += 3;
+					break;
+				}
+			case SkyShaderTechniques::CloudsFade:
+				{
+					defines[0] = { "TEX", nullptr };
+					defines[1] = { "CLOUDS", nullptr };
+					defines[2] = { "TEXFADE", nullptr };
+					defines += 3;
+					break;
+				}
+			case SkyShaderTechniques::Texture:
+				{
+					defines[0] = { "TEX", nullptr };
+					++defines;
+					break;
+				}
+			case SkyShaderTechniques::Sky:
+				{
+					defines[0] = { "DITHER", nullptr };
+					++defines;
+					break;
+				}
+			}
+			
 			defines[0] = { nullptr, nullptr };
 		}
 
@@ -167,6 +251,9 @@ namespace SIE
 				break;
 			case RE::BSShader::Type::DistantTree:
 				GetDistantTreeShaderDefines(descriptor, defines);
+				break;
+			case RE::BSShader::Type::Sky:
+				GetSkyShaderDefines(descriptor, defines);
 				break;
 			}
 		}
@@ -272,6 +359,24 @@ namespace SIE
 			distantTreePS = {
 				{ "DiffuseColor", 0 },
 				{ "AmbientColor", 1 },
+			};
+
+			auto& skyVS = result[static_cast<size_t>(RE::BSShader::Type::Sky)]
+										[static_cast<size_t>(ShaderClass::Vertex)];
+			skyVS = {
+				{ "WorldViewProj", 0 },
+				{ "World", 1 },
+				{ "PreviousWorld", 2 },
+				{ "BlendColor", 3 },
+				{ "EyePosition", 4 },
+				{ "TexCoordOff", 5 },
+				{ "VParams", 6 },
+			};
+
+			auto& skyPS = result[static_cast<size_t>(RE::BSShader::Type::Sky)]
+										[static_cast<size_t>(ShaderClass::Pixel)];
+			skyPS = {
+				{ "PParams", 0 },
 			};
 
 			return result;
@@ -684,7 +789,7 @@ namespace SIE
 		uint32_t descriptor)
 	{
 		if (type != RE::BSShader::Type::Lighting && type != RE::BSShader::Type::BloodSplatter &&
-			type != RE::BSShader::Type::DistantTree)
+			type != RE::BSShader::Type::DistantTree && type != RE::BSShader::Type::Sky)
 		{
 			return nullptr;
 		}
@@ -714,7 +819,8 @@ namespace SIE
 	RE::BSGraphics::PixelShader* ShaderCache::GetPixelShader(RE::BSShader::Type type,
 		uint32_t descriptor)
 	{
-		if (type != RE::BSShader::Type::Lighting && type != RE::BSShader::Type::BloodSplatter && type != RE::BSShader::Type::DistantTree)
+		if (type != RE::BSShader::Type::Lighting && type != RE::BSShader::Type::BloodSplatter &&
+			type != RE::BSShader::Type::DistantTree && type != RE::BSShader::Type::Sky)
 		{
 			return nullptr;
 		}
