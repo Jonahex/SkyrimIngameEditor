@@ -7,7 +7,6 @@
 #include <RE/B/bhkCollisionObject.h>
 #include <RE/B/bhkRigidBody.h>
 #include <RE/B/BSFadeNode.h>
-#include <RE/B/BSGeometry.h>
 #include <RE/B/BSLightingShaderMaterialEnvmap.h>
 #include <RE/B/BSLightingShaderMaterialEye.h>
 #include <RE/B/BSLightingShaderMaterialFacegenTint.h>
@@ -17,11 +16,15 @@
 #include <RE/B/BSLightingShaderMaterialSnow.h>
 #include <RE/B/BSLightingShaderProperty.h>
 #include <RE/B/BSShaderTextureSet.h>
+#include <RE/B/BSTriShape.h>
 #include <RE/B/BSXFlags.h>
 #include <RE/H/hkpRigidBody.h>
+#include <RE/N/NiAlphaProperty.h>
 #include <RE/N/NiCollisionObject.h>
 #include <RE/N/NiIntegerExtraData.h>
 #include <RE/N/NiNode.h>
+#include <RE/N/NiParticleSystem.h>
+#include <RE/N/NiPSysModifier.h>
 #include <RE/N/NiSkinInstance.h>
 #include <RE/N/NiStream.h>
 #include <RE/N/NiStringExtraData.h>
@@ -535,6 +538,17 @@ namespace SIE
 
 			auto& rttiCache = RTTICache::Instance();
 
+			if (PushingCollapsingHeader("Vertex Descriptor"))
+			{
+				for (const auto& [value, name] : magic_enum::enum_entries<RE::BSGraphics::Vertex::Flags>())
+				{
+					bool isPresent = geometry.vertexDesc.HasFlag(value);
+					ImGui::Checkbox(name.data(), &isPresent);
+				}
+
+				ImGui::TreePop();
+			}
+
 			size_t propertyIndex = 0;
 			for (const auto& property : geometry.properties)
 			{
@@ -566,6 +580,18 @@ namespace SIE
 					ImGui::TreePop();
 				}
 			}
+
+			return wasEdited;
+		}
+
+		static bool BSTriShapeEditor(void* object, void* context)
+		{
+			auto& triShape = *static_cast<RE::BSTriShape*>(object);
+
+			bool wasEdited = false;
+
+			ImGui::Text("%d triangles", triShape.triangleCount);
+			ImGui::Text("%d vertices", triShape.vertexCount);
 
 			return wasEdited;
 		}
@@ -622,6 +648,11 @@ namespace SIE
 					wasEdited = true;
 				}
 				ImGui::TreePop();
+			}
+
+			if (EnumSelector("Texture Clamp Mode", material.textureClampMode))
+			{
+				wasEdited = true;
 			}
 
 			if (context.property.flags.all(RE::BSLightingShaderProperty::EShaderPropertyFlag::kSpecular))
@@ -851,6 +882,145 @@ namespace SIE
 
 			return wasEdited;
 		}
+
+		static bool NiAlphaPropertyEditor(void* object, void* context)
+		{
+			auto& alphaProperty = *static_cast<RE::NiAlphaProperty*>(object);
+
+			bool wasEdited = false;
+
+			{
+				constexpr uint8_t minValue = 0;
+				constexpr uint8_t maxValue = 255;
+				if (ImGui::SliderScalar("Alpha Threshold", ImGuiDataType_U8,
+						&alphaProperty.alphaThreshold, &minValue, &maxValue))
+				{
+					wasEdited = true;
+				}
+			}
+
+			{
+				bool blendingEnabled = alphaProperty.GetAlphaBlending();
+				if (ImGui::Checkbox("Enabled Blending", &blendingEnabled))
+				{
+					alphaProperty.SetAlphaBlending(blendingEnabled);
+					wasEdited = true;
+				}
+			}
+
+			{
+				auto srcBlendMode = alphaProperty.GetSrcBlendMode();
+				if (EnumSelector<RE::NiAlphaProperty::AlphaFunction>("Source Blend Mode", srcBlendMode))
+				{
+					alphaProperty.SetSrcBlendMode(srcBlendMode);
+					wasEdited = true;
+				}
+			}
+
+			{
+				auto dstBlendMode = alphaProperty.GetDestBlendMode();
+				if (EnumSelector<RE::NiAlphaProperty::AlphaFunction>("Destination Blend Mode",
+						dstBlendMode))
+				{
+					alphaProperty.SetDestBlendMode(dstBlendMode);
+					wasEdited = true;
+				}
+			}
+
+			{
+				bool testingEnabled = alphaProperty.GetAlphaTesting();
+				if (ImGui::Checkbox("Enabled Testing", &testingEnabled))
+				{
+					alphaProperty.SetAlphaTesting(testingEnabled);
+					wasEdited = true;
+				}
+			}
+
+			{
+				auto alphaTestMode = alphaProperty.GetAlphaTestMode();
+				if (EnumSelector<RE::NiAlphaProperty::TestFunction>("Alpha Test Function",
+						alphaTestMode))
+				{
+					alphaProperty.SetAlphaTestMode(alphaTestMode);
+					wasEdited = true;
+				}
+			}
+
+			{
+				bool noSorter = alphaProperty.GetNoSorter();
+				if (ImGui::Checkbox("No Sorter", &noSorter))
+				{
+					alphaProperty.SetNoSorter(noSorter);
+					wasEdited = true;
+				}
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiParticlesEditor(void* object, void* context)
+		{
+			auto& particles = *static_cast<RE::NiParticles*>(object);
+
+			bool wasEdited = false;
+
+			auto& rttiCache = RTTICache::Instance();
+			if (particles.particleData != nullptr)
+			{
+				const std::string& typeName = rttiCache.GetTypeName(particles.particleData.get());
+				if (PushingCollapsingHeader(
+						std::format("[Particles Data] <{}>", typeName).c_str()))
+				{
+					if (rttiCache.BuildEditor(particles.particleData.get()))
+					{
+						wasEdited = true;
+					}
+					ImGui::TreePop();
+				}
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiParticleSystemEditor(void* object, void* context)
+		{
+			auto& particleSystem = *static_cast<RE::NiParticleSystem*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::Checkbox("World Space", &particleSystem.isWorldspace))
+			{
+				wasEdited = true;
+			}
+
+			auto& rttiCache = RTTICache::Instance();
+
+			{
+				size_t modifierIndex = 0;
+				auto modifierItem = particleSystem.modifierList.head;
+				while (modifierItem != nullptr)
+				{
+					if (modifierItem->element != nullptr)
+					{
+						const std::string& typeName =
+							rttiCache.GetTypeName(modifierItem->element.get());
+						if (PushingCollapsingHeader(std::format("[Modifier] <{}> {}##{}", typeName,
+								modifierItem->element->name.c_str(), modifierIndex)
+														.c_str()))
+						{
+							if (rttiCache.BuildEditor(modifierItem->element.get()))
+							{
+								wasEdited = true;
+							}
+							ImGui::TreePop();
+						}
+					}
+					modifierItem = modifierItem->next;
+				}
+			}
+
+			return wasEdited;
+		}
 	}
 
 	bool DispatchableNiObjectEditor(const char* label, RE::NiObject& object)
@@ -887,6 +1057,10 @@ namespace SIE
 			SNiObjectEditor::NiNodeEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSGeometry),
 			SNiObjectEditor::BSGeometryEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSTriShape),
+			SNiObjectEditor::BSTriShapeEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiAlphaProperty),
+			SNiObjectEditor::NiAlphaPropertyEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSShaderProperty),
 			SNiObjectEditor::BSShaderPropertyEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderProperty),
@@ -932,5 +1106,9 @@ namespace SIE
 			SNiObjectEditor::bhkEntityEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_bhkRigidBody),
 			SNiObjectEditor::bhkRigidBodyEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiParticles),
+			SNiObjectEditor::NiParticlesEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiParticleSystem),
+			SNiObjectEditor::NiParticleSystemEditor);
 	}
 }
