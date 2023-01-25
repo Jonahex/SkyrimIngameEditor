@@ -316,6 +316,172 @@ namespace SIE
 			defines[0] = { nullptr, nullptr };
 		}
 
+		enum class EffectShaderFlags
+		{
+			Vc						= 1 << 0,
+			TexCoord				= 1 << 1,
+			TexCoordIndex			= 1 << 2,
+			Skinned					= 1 << 3,
+			Normals					= 1 << 4,
+			BinormalTangent			= 1 << 5,
+			Texture					= 1 << 6,
+			IndexedTexture			= 1 << 7,
+			Falloff					= 1 << 8,
+			AddBlend				= 1 << 10,
+			MultBlend				= 1 << 11,
+			Particles				= 1 << 12,
+			StripParticles			= 1 << 13,
+			Blood					= 1 << 14,
+			Membrane				= 1 << 15,
+			Lighting				= 1 << 16,
+			ProjectedUv				= 1 << 17,
+			Soft					= 1 << 18,
+			GrayscaleToColor		= 1 << 19,
+			GrayscaleToAlpha		= 1 << 20,
+			IgnoreTexAlpha			= 1 << 21,
+			MultBlendDecal			= 1 << 22,
+			AlphaTest				= 1 << 23,
+			SkyObject				= 1 << 24,
+			MsnSpuSkinned			= 1 << 25,
+			MotionVectorsNormals	= 1 << 26,
+		};
+
+		static void GetEffectShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
+		{
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::Vc))
+			{
+				defines[0] = { "VC", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::TexCoord))
+			{
+				defines[0] = { "TEXCOORD", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::TexCoordIndex))
+			{
+				defines[0] = { "TEXCOORD_INDEX", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::Skinned))
+			{
+				defines[0] = { "SKINNED", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::Normals))
+			{
+				defines[0] = { "NORMALS", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::BinormalTangent))
+			{
+				defines[0] = { "BINORMAL_TANGENT", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::Texture))
+			{
+				defines[0] = { "TEXTURE", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::IndexedTexture))
+			{
+				defines[0] = { "INDEXED_TEXTURE", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::Falloff))
+			{
+				defines[0] = { "FALLOFF", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::AddBlend))
+			{
+				defines[0] = { "ADDBLEND", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::MultBlend))
+			{
+				defines[0] = { "MULTBLEND", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::Particles))
+			{
+				defines[0] = { "PARTICLES", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::StripParticles))
+			{
+				defines[0] = { "STRIP_PARTICLES", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::Blood))
+			{
+				defines[0] = { "BLOOD", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::Membrane))
+			{
+				defines[0] = { "MEMBRANE", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::Lighting))
+			{
+				defines[0] = { "LIGHTING", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::ProjectedUv))
+			{
+				defines[0] = { "PROJECTED_UV", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::Soft))
+			{
+				defines[0] = { "SOFT", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::GrayscaleToColor))
+			{
+				defines[0] = { "GRAYSCALE_TO_COLOR", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::GrayscaleToAlpha))
+			{
+				defines[0] = { "GRAYSCALE_TO_ALPHA", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::IgnoreTexAlpha))
+			{
+				defines[0] = { "IGNORE_TEX_ALPHA", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::MultBlendDecal))
+			{
+				defines[0] = { "MULTBLEND_DECAL", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::AlphaTest))
+			{
+				defines[0] = { "ALPHA_TEST", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::SkyObject))
+			{
+				defines[0] = { "SKY_OBJECT", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::MsnSpuSkinned))
+			{
+				defines[0] = { "MSN_SPU_SKINNED", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(EffectShaderFlags::MotionVectorsNormals))
+			{
+				defines[0] = { "MOTIONVECTORS_NORMALS", nullptr };
+				++defines;
+			}
+
+			defines[0] = { nullptr, nullptr };
+		}
+
 		static void GetShaderDefines(RE::BSShader::Type type, uint32_t descriptor,
 			D3D_SHADER_MACRO* defines)
 		{
@@ -508,6 +674,48 @@ namespace SIE
 			particlePS = {
 				{ "ColorScale", 0 },
 				{ "TextureSize", 1 },
+			};
+
+			auto& effectVS = result[static_cast<size_t>(RE::BSShader::Type::Effect)]
+									 [static_cast<size_t>(ShaderClass::Vertex)];
+			effectVS = {
+				{ "World", 0 },
+				{ "PreviousWorld", 1 },
+				{ "Bones", 2 },
+				{ "EyePosition", 3 },
+				{ "FogParam", 4 },
+				{ "FogNearColor", 5 },
+				{ "FogFarColor", 6 },
+				{ "FalloffData", 7 },
+				{ "SoftMateralVSParams", 8 },
+				{ "TexcoordOffset", 9 },
+				{ "TexcoordOffsetMembrane", 10 },
+				{ "SubTexOffset", 11 },
+				{ "PosAdjust", 12 },
+				{ "MatProj", 13 },
+			};
+
+			auto& effectPS = result[static_cast<size_t>(RE::BSShader::Type::Effect)]
+									 [static_cast<size_t>(ShaderClass::Pixel)];
+			effectPS = {
+				{ "PropertyColor", 0 },
+				{ "AlphaTestRef", 1 },
+				{ "MembraneRimColor", 2 },
+				{ "MembraneVars", 3 },
+				{ "PLightPositionX", 4 },
+				{ "PLightPositionY", 5 },
+				{ "PLightPositionZ", 6 },
+				{ "PLightingRadiusInverseSquared", 7 },
+				{ "PLightColorR", 8 },
+				{ "PLightColorG", 9 },
+				{ "PLightColorB", 10 },
+				{ "DLightColor", 11 },
+				{ "VPOSOffset", 12 },
+				{ "CameraData", 13 },
+				{ "FilteringParam", 14 },
+				{ "BaseColor", 15 },
+				{ "BaseColorScale", 16 },
+				{ "LightingInfluence", 17 },
 			};
 
 			return result;

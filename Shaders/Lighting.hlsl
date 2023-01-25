@@ -73,7 +73,6 @@ struct VS_OUTPUT
 cbuffer PerFrame									: register(b12)
 {
 	row_major float3x3 ScreenProj					: packoffset(c0);
-	row_major float4x4 UnknownMatrix				: packoffset(c4);
 	row_major float4x4 ViewProj						: packoffset(c8);
 #if defined (SKINNED)
 	float3 BonesPivot								: packoffset(c40);
@@ -114,9 +113,7 @@ cbuffer PreviousBonesBuffer							: register(b9)
 {
 	float4 PreviousBones[240]						: packoffset(c0);
 }
-#endif
 
-#if defined (SKINNED)
 cbuffer BonesBuffer									: register(b10)
 {
 	float4 Bones[240]								: packoffset(c0);
@@ -137,24 +134,52 @@ float2 GetTreeShiftVector(float4 position, float4 color)
 #if defined (SKINNED)
 float3x4 GetBoneMatrix(float4 bones[240], int4 actualIndices, float3 pivot, float4 weights)
 {
-	precise float4 pivot3 = float4(0, 0, 0, pivot.z);
-	precise float4 pivot2 = float4(0, 0, 0, pivot.y);
-	precise float4 pivot1 = float4(0, 0, 0, pivot.x);
+	/*float3x4 result;
+	for (int rowIndex = 0; rowIndex < 3; ++rowIndex)
+	{
+		float4 pivotRow = float4(0, 0, 0, pivot[rowIndex]);
+		result[rowIndex] = 0.0.xxxx;
+		for (int boneIndex = 0; boneIndex < 4; ++boneIndex)
+		{
+			result[rowIndex] += (bones[actualIndices[boneIndex] + rowIndex] - pivotRow) * weights[boneIndex];
+		}
+	}
+	return result;*/
 
-	precise float4 worldMatrix3 = mul((bones[actualIndices.x + 2] - pivot3), weights.x)
-		+ mul((bones[actualIndices.y + 2] - pivot3), weights.y)
-		+ mul((bones[actualIndices.z + 2] - pivot3), weights.z)
-		+ mul((bones[actualIndices.w + 2] - pivot3), weights.w);
-	precise float4 worldMatrix2 = mul((bones[actualIndices.x + 1] - pivot2), weights.x)
-		+ mul((bones[actualIndices.y + 1] - pivot2), weights.y)
-		+ mul((bones[actualIndices.z + 1] - pivot2), weights.z)
-		+ mul((bones[actualIndices.w + 1] - pivot2), weights.w);
-	precise float4 worldMatrix1 = mul((bones[actualIndices.x] - pivot1), weights.x)
-		+ mul((bones[actualIndices.y] - pivot1), weights.y)
-		+ mul((bones[actualIndices.z] - pivot1), weights.z)
-		+ mul((bones[actualIndices.w] - pivot1), weights.w);
+	float3x4 pivotMatrix = transpose(float4x3(0.0.xxx, 0.0.xxx, 0.0.xxx, pivot));
 
-	return float3x4(worldMatrix1, worldMatrix2, worldMatrix3);
+	float3x4 boneMatrix1 =
+		float3x4(bones[actualIndices.x], bones[actualIndices.x + 1], bones[actualIndices.x + 2]);
+	float3x4 boneMatrix2 =
+		float3x4(bones[actualIndices.y], bones[actualIndices.y + 1], bones[actualIndices.y + 2]);
+	float3x4 boneMatrix3 =
+		float3x4(bones[actualIndices.z], bones[actualIndices.z + 1], bones[actualIndices.z + 2]);
+	float3x4 boneMatrix4 =
+		float3x4(bones[actualIndices.w], bones[actualIndices.w + 1], bones[actualIndices.w + 2]);
+
+	float3x4 unitMatrix = float3x4(1.0.xxxx, 1.0.xxxx, 1.0.xxxx);
+	float3x4 weightMatrix1 = unitMatrix * weights.x;
+	float3x4 weightMatrix2 = unitMatrix * weights.y;
+	float3x4 weightMatrix3 = unitMatrix * weights.z;
+	float3x4 weightMatrix4 = unitMatrix * weights.w;
+
+	return (boneMatrix1 - pivotMatrix) * weightMatrix1 +
+	       (boneMatrix2 - pivotMatrix) * weightMatrix2 +
+	       (boneMatrix3 - pivotMatrix) * weightMatrix3 +
+	       (boneMatrix4 - pivotMatrix) * weightMatrix4;
+}
+
+float3x3 GetBoneRSMatrix(float4 bones[240], int4 actualIndices, float4 weights)
+{
+	float3x3 result;
+	for (int rowIndex = 0; rowIndex < 3; ++rowIndex)
+	{
+		result[rowIndex] = weights.xxx * bones[actualIndices.x + rowIndex].xyz +
+		                   weights.yyy * bones[actualIndices.y + rowIndex].xyz +
+		                   weights.zzz * bones[actualIndices.z + rowIndex].xyz +
+		                   weights.www * bones[actualIndices.w + rowIndex].xyz;
+	}
+	return result;
 }
 #endif
 
@@ -187,16 +212,17 @@ VS_OUTPUT main(VS_INPUT input)
 #if defined (SKINNED)
 	precise int4 actualIndices = 765.01.xxxx * input.BoneIndices.xyzw;
 
-	float3x4 boneMatrix1 = float3x4(Bones[actualIndices.x], Bones[actualIndices.x + 1], Bones[actualIndices.x + 2]);
-	float3x4 boneMatrix2 = float3x4(Bones[actualIndices.y], Bones[actualIndices.y + 1], Bones[actualIndices.y + 2]);
-	float3x4 boneMatrix3 = float3x4(Bones[actualIndices.z], Bones[actualIndices.z + 1], Bones[actualIndices.z + 2]);
-	float3x4 boneMatrix4 = float3x4(Bones[actualIndices.w], Bones[actualIndices.w + 1], Bones[actualIndices.w + 2]);
+	float3x4 previousWorldMatrix =
+		GetBoneMatrix(PreviousBones, actualIndices, PreviousBonesPivot, input.BoneWeights);
+	precise float4 previousWorldPosition =
+		float4(mul(inputPosition, transpose(previousWorldMatrix)), 1);
 
 	float3x4 worldMatrix = GetBoneMatrix(Bones, actualIndices, BonesPivot, input.BoneWeights);
-
 	precise float4 worldPosition = float4(mul(inputPosition, transpose(worldMatrix)), 1);
+
 	float4 viewPos = mul(ViewProj, worldPosition);
 #else
+	precise float4 previousWorldPosition = float4(mul(PreviousWorld, inputPosition), 1);
 	precise float4 worldPosition = float4(mul(World, inputPosition), 1);
 	precise float4x4 world4x4 = float4x4(World[0], World[1], World[2], float4(0, 0, 0, 1));
 	precise float4x4 modelView = mul(ViewProj, world4x4);
@@ -224,6 +250,10 @@ VS_OUTPUT main(VS_INPUT input)
 #else
 	vsout.InputPosition.xyz = inputPosition.xyz;
 #endif
+
+#if defined (SKINNED)
+	float3x3 boneRSMatrix = GetBoneRSMatrix(Bones, actualIndices, input.BoneWeights);
+#endif
 		
 #if !defined(MODELSPACENORMALS)
 	float3x3 tbn = float3x3(
@@ -234,12 +264,7 @@ VS_OUTPUT main(VS_INPUT input)
 	float3x3 tbnTr = transpose(tbn);
 
 #if defined (SKINNED)
-	float3x3 boneRotationMatrix = float3x3(0, 0, 0, 0, 0, 0, 0, 0, 0);
-	boneRotationMatrix[0] = mul(input.BoneWeights.x, boneMatrix1[0].xyz) + mul(input.BoneWeights.y, boneMatrix2[0].xyz) + mul(input.BoneWeights.z, boneMatrix3[0].xyz) + mul(input.BoneWeights.w, boneMatrix4[0].xyz);
-	boneRotationMatrix[1] = mul(input.BoneWeights.x, boneMatrix1[1].xyz) + mul(input.BoneWeights.y, boneMatrix2[1].xyz) + mul(input.BoneWeights.z, boneMatrix3[1].xyz) + mul(input.BoneWeights.w, boneMatrix4[1].xyz);
-	boneRotationMatrix[2] = mul(input.BoneWeights.x, boneMatrix1[2].xyz) + mul(input.BoneWeights.y, boneMatrix2[2].xyz) + mul(input.BoneWeights.z, boneMatrix3[2].xyz) + mul(input.BoneWeights.w, boneMatrix4[2].xyz);
-
-	float3x3 worldTbnTr = transpose(mul(transpose(tbnTr), transpose(boneRotationMatrix)));
+	float3x3 worldTbnTr = transpose(mul(transpose(tbnTr), transpose(boneRSMatrix)));
 	float3x3 worldTbnTrTr = transpose(worldTbnTr);
 	worldTbnTrTr[0] = normalize(worldTbnTrTr[0]);
 	worldTbnTrTr[1] = normalize(worldTbnTrTr[1]);
@@ -258,15 +283,9 @@ VS_OUTPUT main(VS_INPUT input)
 	vsout.TBN2.xyz = tbnTr[2];
 #endif
 #elif defined (SKINNED)
-	float3x3 worldTbn = float3x3(0, 0, 0, 0, 0, 0, 0, 0, 0);
-	worldTbn[0] = mul(input.BoneWeights.x, boneMatrix1[0].xyz) + mul(input.BoneWeights.y, boneMatrix2[0].xyz) + mul(input.BoneWeights.z, boneMatrix3[0].xyz) + mul(input.BoneWeights.w, boneMatrix4[0].xyz);
-	worldTbn[1] = mul(input.BoneWeights.x, boneMatrix1[1].xyz) + mul(input.BoneWeights.y, boneMatrix2[1].xyz) + mul(input.BoneWeights.z, boneMatrix3[1].xyz) + mul(input.BoneWeights.w, boneMatrix4[1].xyz);
-	worldTbn[2] = mul(input.BoneWeights.x, boneMatrix1[2].xyz) + mul(input.BoneWeights.y, boneMatrix2[2].xyz) + mul(input.BoneWeights.z, boneMatrix3[2].xyz) + mul(input.BoneWeights.w, boneMatrix4[2].xyz);
-	float3x3 worldTbnTr = transpose(worldTbn);
-	worldTbnTr[0] = normalize(worldTbnTr[0]);
-	worldTbnTr[1] = normalize(worldTbnTr[1]);
-	worldTbnTr[2] = normalize(worldTbnTr[2]);
-	worldTbnTr = transpose(worldTbnTr);
+	float3x3 boneRSMatrixTr = transpose(boneRSMatrix);
+	float3x3 worldTbnTr = transpose(float3x3(normalize(boneRSMatrixTr[0]),
+		normalize(boneRSMatrixTr[1]), normalize(boneRSMatrixTr[2])));
 
 	vsout.TBN0.xyz = worldTbnTr[0];
 	vsout.TBN1.xyz = worldTbnTr[1];
@@ -317,13 +336,7 @@ VS_OUTPUT main(VS_INPUT input)
 #endif
 
 	vsout.WorldPosition = worldPosition;
-
-#if defined (SKINNED)
-	float3x4 previousWorldMatrix = GetBoneMatrix(PreviousBones, actualIndices, PreviousBonesPivot, input.BoneWeights);
-	vsout.PreviousWorldPosition = float4(mul(inputPosition, transpose(previousWorldMatrix)), 1);
-#else
-	vsout.PreviousWorldPosition = float4(mul(PreviousWorld, previousInputPosition), 1);
-#endif
+	vsout.PreviousWorldPosition = previousWorldPosition;
 	
 #if defined (VC)
 	vsout.Color = input.Color;
@@ -331,13 +344,11 @@ VS_OUTPUT main(VS_INPUT input)
 	vsout.Color = 1.0.xxxx;
 #endif	
 	
-    float fogColorMult = length(viewPos.xyz);
-    fogColorMult = log2(saturate(fogColorMult * FogParam.y - FogParam.x));
-	fogColorMult = exp2(FogParam.z * fogColorMult);
-	fogColorMult = min(FogParam.w, fogColorMult);
+    float fogColorParam = min(FogParam.w,
+		exp2(FogParam.z * log2(saturate(length(viewPos.xyz) * FogParam.y - FogParam.x))));
 
-    vsout.FogParam.xyz = fogColorMult.xxx * (FogFarColor.xyz - FogNearColor.xyz) + FogNearColor.xyz;
-    vsout.FogParam.w = fogColorMult;
+    vsout.FogParam.xyz = lerp(FogNearColor.xyz, FogFarColor.xyz, fogColorParam);
+	vsout.FogParam.w = fogColorParam;
 	
     return vsout;
 }
