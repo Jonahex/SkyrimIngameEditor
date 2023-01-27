@@ -13,6 +13,7 @@
 #include "3rdparty/fts_fuzzy_match.h"
 #include "3rdparty/ImGuizmo/ImGuizmo.h"
 
+#include <RE/A/ActorValueList.h>
 #include <RE/A/AnimationSetDataSingleton.h>
 #include <RE/B/BSAnimationGraphManager.h>
 #include <RE/B/BShkbAnimationGraph.h>
@@ -194,9 +195,9 @@ namespace SIE
 
 			if (target->formType == RE::FormType::ActorCharacter)
 			{
+				RE::Actor* targetActor = static_cast<RE::Actor*>(target);
 				if (PushingCollapsingHeader("ActorState"))
 				{
-					const RE::Actor* targetActor = static_cast<RE::Actor*>(target);
 					ImGui::Text(
 						std::format("movingBack is {}", bool(targetActor->actorState1.movingBack))
 							.c_str());
@@ -269,6 +270,22 @@ namespace SIE
 					ImGui::Text(
 						std::format("staggered is {}", bool(targetActor->actorState2.staggered))
 							.c_str());
+					ImGui::TreePop();
+				}
+
+				if (PushingCollapsingHeader("Actor Values"))
+				{
+					auto actorValues = RE::ActorValueList::GetSingleton();
+					for (size_t actorValueIndex = 0; actorValueIndex < static_cast<size_t>(RE::ActorValue::kTotal); ++actorValueIndex)
+					{
+						auto actorValue = static_cast<RE::ActorValue>(actorValueIndex);
+						auto actorValueInfo = actorValues->GetActorValue(actorValue);
+						auto value = targetActor->GetActorValue(actorValue);
+						if (ImGui::DragFloat(actorValueInfo->enumName, &value, 0.1f))
+						{
+							targetActor->SetActorValue(actorValue, value);
+						}
+					}
 					ImGui::TreePop();
 				}
 			} 
