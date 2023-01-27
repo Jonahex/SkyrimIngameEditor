@@ -228,6 +228,25 @@ VS_OUTPUT main(VS_INPUT input)
 	precise float4x4 modelView = mul(ViewProj, world4x4);
 	float4 viewPos = mul(modelView, inputPosition);
 #endif
+
+#if defined(OUTLINE) && !defined(MODELSPACENORMALS)
+	float3 normal = normalize(-1.0.xxx + 2.0.xxx * input.Normal.xyz);
+	float outlineShift = min(max(viewPos.z / 150, 1), 50);
+	inputPosition.xyz += outlineShift * normal.xyz;
+	previousInputPosition.xyz += outlineShift * normal.xyz;
+
+#if defined (SKINNED)
+	previousWorldPosition =
+		float4(mul(inputPosition, transpose(previousWorldMatrix)), 1);
+	worldPosition = float4(mul(inputPosition, transpose(worldMatrix)), 1);
+	viewPos = mul(ViewProj, worldPosition);
+#else
+	previousWorldPosition = float4(mul(PreviousWorld, inputPosition), 1);
+	worldPosition = float4(mul(World, inputPosition), 1);
+	viewPos = mul(modelView, inputPosition);
+#endif
+#endif
+
 	vsout.Position = viewPos;
 
 #if defined (LODLANDNOISE) || defined (LODLANDSCAPE)
@@ -1499,6 +1518,10 @@ PS_OUTPUT main(PS_INPUT input)
     screenSpaceNormal.xy /= screenSpaceNormal.zz;
     psout.ScreenSpaceNormals.xy = screenSpaceNormal.xy + 0.5.xx;
     psout.ScreenSpaceNormals.z = 0;
+
+#if defined(OUTLINE)
+	psout.Albedo = float4(1, 0, 0, 1);
+#endif
 	
     return psout;
 }

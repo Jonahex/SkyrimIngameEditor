@@ -23,6 +23,8 @@ namespace SIE
 
 		void SetHighlight(RE::NiAVObject* object, bool isEnable)
 		{
+			return;
+
 			static std::unordered_map<RE::NiPointer<RE::NiProperty>, HighlightBackup> PropertyBackups;
 			static std::unordered_map<RE::BSTSmartPointer<RE::BSShaderMaterial>,
 				RE::BSShaderMaterial*>

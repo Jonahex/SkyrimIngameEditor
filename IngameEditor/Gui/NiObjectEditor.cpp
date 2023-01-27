@@ -20,15 +20,16 @@
 #include <RE/B/BSXFlags.h>
 #include <RE/H/hkpRigidBody.h>
 #include <RE/N/NiAlphaProperty.h>
+#include <RE/N/NiBillboardNode.h>
 #include <RE/N/NiCollisionObject.h>
+#include <RE/N/NiControllerManager.h>
+#include <RE/N/NiControllerSequence.h>
 #include <RE/N/NiIntegerExtraData.h>
-#include <RE/N/NiNode.h>
 #include <RE/N/NiParticleSystem.h>
 #include <RE/N/NiPSysModifier.h>
 #include <RE/N/NiSkinInstance.h>
 #include <RE/N/NiStream.h>
 #include <RE/N/NiStringExtraData.h>
-#include <RE/N/NiTimeController.h>
 
 #include <imgui.h>
 
@@ -1021,6 +1022,126 @@ namespace SIE
 
 			return wasEdited;
 		}
+
+		static bool NiBillboardNodeEditor(void* object, void* context)
+		{
+			auto& billboardNode = *static_cast<RE::NiBillboardNode*>(object);
+
+			bool wasEdited = false;
+
+			if (EnumSelector("Billboard Mode", billboardNode.billboardMode))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiTimeControllerEditor(void* object, void* context)
+		{
+			auto& timeController = *static_cast<RE::NiTimeController*>(object);
+
+			bool wasEdited = false;
+
+			uint16_t animType = timeController.flags.underlying() & 0b1;
+			if (EnumSelector<RE::NiTimeController::AnimType>("Anim Type", animType))
+			{
+				timeController.flags = 
+					static_cast<RE::NiTimeController::Flag>(
+					(animType & 0b1) | (timeController.flags.underlying() & ~0b1));
+				wasEdited = true;
+			}
+
+			uint16_t cycleType = (timeController.flags.underlying() >> 1) & 0b11;
+			if (EnumSelector<RE::NiTimeController::CycleType>("Cycle Type", cycleType))
+			{
+				timeController.flags = static_cast<RE::NiTimeController::Flag>(
+					((cycleType & 0b11) << 1) | (timeController.flags.underlying() & ~0b110));
+				wasEdited = true;
+			}
+
+			for (size_t flagIndex = 3; flagIndex < 8; ++flagIndex)
+			{
+				const auto flagMask = static_cast<RE::NiTimeController::Flag>(1 << flagIndex);
+				if (FlagEdit(magic_enum::enum_name(flagMask).data(), timeController.flags,
+						flagMask))
+				{
+					wasEdited = true;
+				}
+			}
+
+			if (ImGui::DragFloat("Frequency", &timeController.frequency, 0.1f, 0.f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Phase", &timeController.phase, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Start Time", &timeController.loKeyTime, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("End Time", &timeController.hiKeyTime, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiControllerManagerEditor(void* object, void* context)
+		{
+			auto& controllerManager = *static_cast<RE::NiControllerManager*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::Checkbox("Cumulative", &controllerManager.cumulative))
+			{
+				wasEdited = true;
+			}
+
+			auto& rttiCache = RTTICache::Instance();
+
+			{
+				size_t sequenceIndex = 0;
+
+				for (const auto& controllerSequence : controllerManager.sequenceArray)
+				{
+					if (controllerSequence != nullptr)
+					{
+						const std::string& typeName =
+							rttiCache.GetTypeName(controllerSequence.get());
+						if (PushingCollapsingHeader(std::format("[Contoller Sequence] <{}> {}##{}",
+								typeName, controllerSequence->name.c_str(), sequenceIndex)
+														.c_str()))
+						{
+							if (rttiCache.BuildEditor(controllerSequence.get()))
+							{
+								wasEdited = true;
+							}
+							ImGui::TreePop();
+						}
+					}
+				}
+			}
+
+			if (controllerManager.objectPalette != nullptr)
+			{
+				const std::string& typeName =
+					rttiCache.GetTypeName(controllerManager.objectPalette.get());
+				if (PushingCollapsingHeader(std::format("[Object Palette] <{}>", typeName).c_str()))
+				{
+					if (rttiCache.BuildEditor(controllerManager.objectPalette.get()))
+					{
+						wasEdited = true;
+					}
+					ImGui::TreePop();
+				}
+			}
+
+			return wasEdited;
+		}
 	}
 
 	bool DispatchableNiObjectEditor(const char* label, RE::NiObject& object)
@@ -1110,5 +1231,11 @@ namespace SIE
 			SNiObjectEditor::NiParticlesEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiParticleSystem),
 			SNiObjectEditor::NiParticleSystemEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiBillboardNode),
+			SNiObjectEditor::NiBillboardNodeEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiTimeController),
+			SNiObjectEditor::NiTimeControllerEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiControllerManager),
+			SNiObjectEditor::NiControllerManagerEditor);
 	}
 }

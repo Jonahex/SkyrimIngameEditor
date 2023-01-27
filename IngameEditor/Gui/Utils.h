@@ -146,10 +146,10 @@ namespace SIE
 		if (ImGui::BeginCombo(label,
 				magic_enum::enum_name(static_cast<EnumType>(enumValue)).data()))
 		{
-			for (const auto& value : magic_enum::enum_values<EnumType>())
+			for (const auto& [value, name] : magic_enum::enum_entries<EnumType>())
 			{
 				const bool isSelected = static_cast<ValueType>(value) == enumValue;
-				if (ImGui::Selectable(magic_enum::enum_name(value).data(), isSelected))
+				if (ImGui::Selectable(name.data(), isSelected))
 				{
 					enumValue = static_cast<ValueType>(value);
 					wasSelected = true;

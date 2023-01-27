@@ -59,29 +59,48 @@
 #include <RE/B/BSGeometry.h>
 #include <RE/B/BSFadeNode.h>
 
+#include <magic_enum.hpp>
+
 #include <iostream>
 #include <tchar.h>
 #include <unordered_set>
 #include <stacktrace>
 
+#include <d3d11.h>
 #include <Windows.h>
 
 struct RendererShadowState
 {
 	uint32_t stateUpdateFlags;
-	uint8_t pad0[0x8C];
+	uint8_t pad0[0x84];
+	uint32_t depthStencilDepthMode;
+	uint32_t depthStencilUnknown;
 	uint32_t depthStencilStencilMode;
 	uint32_t stencilRef;
+	uint32_t rasterStateFillMode;
+	uint32_t rasterStateCullMode;
+	uint32_t rasterStateDepthBiasMode;
+	uint32_t rasterStateScissorMode;
+	uint32_t alphaBlendMode;
+	uint32_t alphaBlendAlphaToCoverage;
+	uint32_t alphaBlendWriteMode;
+	bool alphaTestEnabled;
+	float alphaTestRef;
 };
 
 struct BSLightingShader_SetupGeometry
 {
 	static void thunk(RE::BSShader* shader, RE::BSRenderPass* pass, uint32_t renderFlags)
 	{
-		func(shader, pass, renderFlags);
-
 		static REL::Relocation<RendererShadowState*> RendererShadowStateInstance(
 			RE::Offset::RendererShadowStateInstance);
+		static REL::Relocation<ID3D11DepthStencilState**> DepthStencilStates(
+			RELOCATION_ID(524747, 411362));
+		static REL::Relocation<ID3D11Device**> Device(
+			RE::Offset::D3D11Device);
+
+		func(shader, pass, renderFlags);
+
 		if (auto fadeNode = pass->shaderProperty->fadeNode)
 		{
 			const auto& targetManager = SIE::TargetManager::Instance();
@@ -90,60 +109,210 @@ struct BSLightingShader_SetupGeometry
 			{
 				const bool isOutline = (((pass->passEnum - 1207959597) >> 24) & 0x3F) == 20;
 				auto& rss = *RendererShadowStateInstance;
-				rss.stateUpdateFlags |= 8;
+				LastDepthMode = rss.depthStencilDepthMode;
+				LastStencilMode = rss.depthStencilStencilMode;
+				LastStencilRef = rss.stencilRef;
+				LastRasterCullMode = rss.rasterStateCullMode;
+				LastAlphaBlendMode = rss.alphaBlendMode;
+				LastAlphaBlendWriteMode = rss.alphaBlendWriteMode;
+				LastAlphaTestEnabled = rss.alphaTestEnabled;
+				rss.stateUpdateFlags |= (0x1070 | 0xC | 0x80 | 0x100);
 				if (isOutline)
 				{
-					rss.depthStencilStencilMode = 0x1C;
+					rss.depthStencilDepthMode = 0;
+					rss.depthStencilStencilMode = 0xB;
 					rss.stencilRef = 1;
+					rss.rasterStateCullMode = 0;
+					rss.alphaBlendMode = 0;
+					//rss.alphaBlendWriteMode = 0;
+					rss.alphaTestEnabled = false;
 				}
-				else
+				else if (pass->shaderProperty->flags.none(
+							 RE::BSShaderProperty::EShaderPropertyFlag::kDecal,
+							 RE::BSShaderProperty::EShaderPropertyFlag::kDynamicDecal))
 				{
+					logger::info("{} {} {} {} {}", pass->accumulationHint,
+						*reinterpret_cast<uint8_t*>(&pass->LODMode), fadeNode->currentFade, rss.depthStencilStencilMode, rss.stencilRef);
 					rss.depthStencilStencilMode = 2;
 					rss.stencilRef = 1;
+
+					auto& depthStencilTest =
+						DepthStencilStates
+							.get()[40 * rss.depthStencilDepthMode + rss.depthStencilStencilMode];
+					if (OutlinedObjectState == nullptr)
+					{
+						D3D11_DEPTH_STENCIL_DESC OutlinedObjectStateDesc;
+						depthStencilTest->GetDesc(&OutlinedObjectStateDesc);
+						OutlinedObjectStateDesc.BackFace.StencilDepthFailOp =
+							D3D11_STENCIL_OP_REPLACE;
+						OutlinedObjectStateDesc.FrontFace.StencilDepthFailOp =
+							D3D11_STENCIL_OP_REPLACE;
+						(*Device)->CreateDepthStencilState(&OutlinedObjectStateDesc,
+							&OutlinedObjectState);
+					}
+					OriginalState = depthStencilTest;
+					depthStencilTest = OutlinedObjectState;
 				}
 			}
 		}
 	}
 
+	static inline uint32_t LastDepthMode = 6;
+	static inline uint32_t LastStencilMode = 0;
+	static inline uint32_t LastStencilRef = 255;
+	static inline ID3D11DepthStencilState* OriginalState = nullptr;
+	static inline ID3D11DepthStencilState* OutlinedObjectState = nullptr;
+	static inline uint32_t LastRasterCullMode = 1;
+	static inline uint32_t LastAlphaBlendMode = 0;
+	static inline uint32_t LastAlphaBlendWriteMode = 0;
+	static inline bool LastAlphaTestEnabled = false;
+
 	static inline REL::Relocation<decltype(thunk)> func;
 	static constexpr size_t idx = 0x06;
 };
 
-struct BSLightingShaderProperty_GetShaderPasses
+struct BSLightingShader_RestoreGeometry
 {
-	static RE::BSShaderProperty::RenderPassArray* thunk(RE::BSLightingShaderProperty* property,
-		RE::BSGeometry* geometry, uint32_t unk, RE::BSShaderAccumulator* accumulator)
+	static void thunk(RE::BSShader* shader, RE::BSRenderPass* pass, uint32_t renderFlags)
 	{
-		auto result = func(property, geometry, unk, accumulator);
+		static REL::Relocation<RendererShadowState*> RendererShadowStateInstance(
+			RE::Offset::RendererShadowStateInstance);
+		static REL::Relocation<ID3D11DepthStencilState**> DepthStencilStates(
+			RELOCATION_ID(524747, 411362));
 
-		static REL::Relocation<RE::BSRenderPass*(RE::BSShaderProperty::RenderPassArray*,
-			RE::BSRenderPass*, RE::BSShader*, RE::BSShaderProperty*, RE::BSGeometry*, uint32_t)>
-			AddPass(RELOCATION_ID(98885, 105529));
-		static REL::Relocation<RE::BSShader**> LightingShaderPtr(RELOCATION_ID(528150, 415094));
-		 
-		if (auto fadeNode = property->fadeNode)
+		func(shader, pass, renderFlags);
+
+		if (auto fadeNode = pass->shaderProperty->fadeNode)
 		{
 			const auto& targetManager = SIE::TargetManager::Instance();
 			if (fadeNode->userData != nullptr && fadeNode->userData == targetManager.GetTarget() &&
 				targetManager.GetEnableTargetHighlight())
 			{
-				/*auto actualPass = property->renderPassList.head;
-				RE::BSRenderPass* previousPass = nullptr;
-				while (actualPass != nullptr && actualPass->shaderProperty == property)
+				const bool isOutline = (((pass->passEnum - 1207959597) >> 24) & 0x3F) == 20;
+				auto& rss = *RendererShadowStateInstance;
+				rss.stateUpdateFlags |= (0x1070 | 0xC | 0x80 | 0x100);
+				if (!isOutline && pass->shaderProperty->flags.none(
+									  RE::BSShaderProperty::EShaderPropertyFlag::kDecal,
+									  RE::BSShaderProperty::EShaderPropertyFlag::kDynamicDecal))
 				{
-					logger::info("{} {}", actualPass->shader->shaderType.underlying(),
-						actualPass->passEnum);
-					previousPass = actualPass;
-					actualPass = actualPass->next;
+					DepthStencilStates
+						.get()[40 * rss.depthStencilDepthMode + rss.depthStencilStencilMode] =
+						BSLightingShader_SetupGeometry::OriginalState;
 				}
-				if (previousPass != nullptr)
+				rss.depthStencilDepthMode = BSLightingShader_SetupGeometry::LastDepthMode;
+				rss.depthStencilStencilMode = BSLightingShader_SetupGeometry::LastStencilMode;
+				rss.stencilRef = BSLightingShader_SetupGeometry::LastStencilRef;
+				rss.rasterStateCullMode = BSLightingShader_SetupGeometry::LastRasterCullMode;
+				rss.alphaBlendMode = BSLightingShader_SetupGeometry::LastAlphaBlendMode;
+				rss.alphaBlendWriteMode = BSLightingShader_SetupGeometry::LastAlphaBlendWriteMode;
+				rss.alphaTestEnabled = BSLightingShader_SetupGeometry::LastAlphaTestEnabled;
+			}
+		}
+	}
+
+	static inline REL::Relocation<decltype(thunk)> func;
+	static constexpr size_t idx = 0x07;
+};
+
+struct BSBatchRenderer_Draw
+{
+	static void thunk(RE::BSRenderPass* pass)
+	{ 
+		logger::info("{}", pass->passEnum);
+		func(pass);
+	}
+
+	static inline REL::Relocation<decltype(thunk)> func;
+};
+
+struct BSLightingShaderProperty_GetRenderPasses
+{
+	static RE::BSShaderProperty::RenderPassArray* thunk(RE::BSLightingShaderProperty* property,
+		RE::BSGeometry* geometry, uint32_t unk, RE::BSShaderAccumulator* accumulator)
+	{
+		static REL::Relocation<RE::BSRenderPass*(RE::BSShaderProperty::RenderPassArray*,
+			RE::BSRenderPass*, RE::BSShader*, RE::BSShaderProperty*, RE::BSGeometry*, uint32_t)>
+			AddPass(RELOCATION_ID(98885, 105529));
+		static REL::Relocation<RE::BSShader**> LightingShaderPtr(RELOCATION_ID(528150, 415094));
+		static REL::Relocation<void(RE::BSShaderProperty::RenderPassArray*)> ClearRenderPassArray(
+			RELOCATION_ID(98881, 105525));
+		static REL::Relocation<void(RE::BSRenderPass*, uint8_t, RE::BSLight**)> SetRenderPassLights(
+			RELOCATION_ID(100711, 105525));
+
+		bool highlightEnabled = false;
+		if (auto fadeNode = property->fadeNode)
+		{
+			const auto& targetManager = SIE::TargetManager::Instance();
+			if (fadeNode->userData != nullptr)
+			{
+				highlightEnabled = fadeNode->userData == targetManager.GetTarget() &&
+				                   targetManager.GetEnableTargetHighlight();
+				if (!highlightEnabled)
 				{
-					previousPass->next = AddPass(&property->renderPassList, actualPass, *LightingShaderPtr,
-						property,
-						geometry, (20 << 24) + 1207959597);
-				}*/
-				AddPass(&property->renderPassList, nullptr, *LightingShaderPtr, property,
-					geometry, (20 << 24) + 1207959597);
+					auto nextPass = property->renderPassList.head;
+					while (nextPass)
+					{
+						const bool isOutline =
+							(((nextPass->passEnum - 1207959597) >> 24) & 0x3F) == 20;
+						if (isOutline)
+						{
+							ClearRenderPassArray(&property->renderPassList);
+							property->lastRenderPassState = 0x7FFFFFFF;
+							break;
+						}
+						nextPass = nextPass->next;
+					}
+				}
+			}
+		}
+
+		auto result = func(property, geometry, unk, accumulator);
+
+
+		if (highlightEnabled && geometry->flags.none(RE::NiAVObject::Flag::kHidden) &&
+			property->flags.none(RE::BSShaderProperty::EShaderPropertyFlag::kDecal,
+				RE::BSShaderProperty::EShaderPropertyFlag::kDynamicDecal) &&
+			property->renderPassList.head != nullptr)
+		{
+			RE::BSRenderPass* highlightPass = nullptr;
+			RE::BSRenderPass* mainPass = nullptr;
+			auto nextPass = property->renderPassList.head;
+			logger::info("Start:");
+			while (nextPass)
+			{
+				/*logger::info("{} {} {} {}",
+					magic_enum::enum_name(nextPass->shader->shaderType.get()),
+					*reinterpret_cast<uint8_t*>(&nextPass->LODMode), nextPass->accumulationHint,
+					nextPass->passEnum);*/
+				const bool isOutline = (((nextPass->passEnum - 1207959597) >> 24) & 0x3F) == 20;
+				if (isOutline)
+				{
+					highlightPass = nextPass;
+				}
+				else if (nextPass->shader == *LightingShaderPtr)
+				{
+					mainPass = nextPass;
+				}
+				nextPass = nextPass->next;
+			}
+			if (mainPass != nullptr)
+			{
+				uint32_t outlineFlags = 0;
+				if (property->flags.any(RE::BSShaderProperty::EShaderPropertyFlag::kSkinned))
+				{
+					outlineFlags |= 2;
+				}
+				if (property->flags.any(
+						RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
+				{
+					outlineFlags |= 4;
+				}
+				RE::BSRenderPass* pass =
+					AddPass(&property->renderPassList, highlightPass, *LightingShaderPtr, property,
+						geometry, ((20 << 24) + outlineFlags) + 1207959597);
+				SetRenderPassLights(pass, mainPass->numLights, mainPass->sceneLights);
+				pass->accumulationHint = mainPass->accumulationHint;
+				pass->LODMode = mainPass->LODMode;
 			}
 		}
 
@@ -1039,313 +1208,6 @@ namespace BehaviorGraph
 		}
 		static inline REL::Relocation<decltype(thunk)> func;
 	};
-
-	namespace Console
-	{
-		void Print(const char* a_fmt)
-	    {
-			if (RE::ConsoleLog::IsConsoleMode()) 
-			{
-				RE::ConsoleLog::GetSingleton()->Print(a_fmt);
-			}
-		};
-
-		namespace StartGraphTracking
-		{
-			bool Execute(const RE::SCRIPT_PARAMETER* a_paramInfo, RE::SCRIPT_FUNCTION::ScriptData* a_scriptData, RE::TESObjectREFR* refr, RE::TESObjectREFR* a_containingObj, RE::Script* a_scriptObj, RE::ScriptLocals* a_locals, double& a_result, std::uint32_t& a_opcodeOffsetPtr)
-			{
-				if (refr != nullptr) 
-				{
-					int eventsState = 0;
-					int varsState = 0;
-					int actionsState = 0;
-					if (auto chunk = a_scriptData->GetIntegerChunk(); a_scriptData->chunkSize >= 7) 
-					{
-						eventsState = chunk->GetInteger();
-						if (chunk = chunk->GetNext()->AsInteger(); a_scriptData->chunkSize >= 12) 
-						{
-							varsState = chunk->GetInteger();
-							if (chunk = chunk->GetNext()->AsInteger(); a_scriptData->chunkSize >= 17) 
-							{
-								actionsState = chunk->GetInteger();
-							}
-						}
-					}
-					
-					RE::Actor* actor = nullptr;
-					if (refr->formType == RE::FormType::ActorCharacter) 
-					{
-						actor = static_cast<RE::Actor*>(refr);
-					}
-					{
-						const bool enable = !(actionsState & 0b1);
-
-						ActorMediator_Process::refr = refr;
-						ActorMediator_Process::enable = enable;
-					}
-					{
-						const bool enableProcess = !(eventsState & 0b1);
-						const bool enableSend = !(eventsState & 0b10);
-					}
-					{
-						const bool enableSetNonEveryFrame = !(varsState & 0b1);
-						const bool enableSetEveryFrame = !(varsState & 0b10);
-						const bool enableGetSuccessful = !(varsState & 0b100);
-						const bool enableGetFailed = !(varsState & 0b1000);
-
-						BShkbAnimationGraph_SetGraphVariableFloat::refr = refr;
-						BShkbAnimationGraph_SetGraphVariableFloat::enableNonEveryFrame = enableSetNonEveryFrame;
-
-						BShkbAnimationGraph_GetGraphVariableFloat::refr = refr;
-						BShkbAnimationGraph_GetGraphVariableFloat::enableSuccessful = enableGetSuccessful;
-						BShkbAnimationGraph_GetGraphVariableFloat::enableFailed = enableGetFailed;
-
-						BShkbAnimationGraph_SetGraphVariableBool::refr = refr;
-						BShkbAnimationGraph_SetGraphVariableBool::enableNonEveryFrame = enableSetNonEveryFrame;
-
-						BShkbAnimationGraph_GetGraphVariableBool::refr = refr;
-						BShkbAnimationGraph_GetGraphVariableBool::enableSuccessful = enableGetSuccessful;
-						BShkbAnimationGraph_GetGraphVariableBool::enableFailed = enableGetFailed;
-
-						BShkbAnimationGraph_SetGraphVariableInt::refr = refr;
-						BShkbAnimationGraph_SetGraphVariableInt::enableNonEveryFrame = enableSetNonEveryFrame;
-
-						BShkbAnimationGraph_GetGraphVariableInt::refr = refr;
-						BShkbAnimationGraph_GetGraphVariableInt::enableSuccessful = enableGetSuccessful;
-						BShkbAnimationGraph_GetGraphVariableInt::enableFailed = enableGetFailed;
-
-						BShkbAnimationGraph_SetGraphVariableIntRef::refr = refr;
-						BShkbAnimationGraph_SetGraphVariableIntRef::enableNonEveryFrame = enableSetNonEveryFrame;
-
-						BShkbAnimationGraph_SetGraphVariableVector::refr = refr;
-						BShkbAnimationGraph_SetGraphVariableVector::enableNonEveryFrame = enableSetNonEveryFrame;
-						BShkbAnimationGraph_SetGraphVariableVector::enableEveryFrame = enableSetEveryFrame;
-
-						BShkbAnimationGraph_GetGraphVariableVector::refr = refr;
-						BShkbAnimationGraph_GetGraphVariableVector::enableSuccessful = enableGetSuccessful;
-						BShkbAnimationGraph_GetGraphVariableVector::enableFailed = enableGetFailed;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorCopyGraphVariableChannel, float>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorCopyGraphVariableChannel, float>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorCopyGraphVariableChannel, int>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorCopyGraphVariableChannel, int>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorDirectionChannel, float>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorDirectionChannel, float>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorLeftWeaponSpeedChannel, float>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorLeftWeaponSpeedChannel, float>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorLookAtChannel, bool>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorLookAtChannel, bool>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorPitchChannel, float>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorPitchChannel, float>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorPitchDeltaChannel, float>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorPitchDeltaChannel, float>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorRollChannel, float>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorRollChannel, float>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorSpeedChannel, float>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorSpeedChannel, float>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorTargetSpeedChannel, float>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorTargetSpeedChannel, float>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorTimeDeltaChannel, float>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorTimeDeltaChannel, float>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorTurnDeltaChannel, float>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorTurnDeltaChannel, float>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorWantBlockChannel, int>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorWantBlockChannel, int>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorWardHealthChannel, float>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorWardHealthChannel, float>::enable = enableSetEveryFrame;
-
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorWeaponSpeedChannel, float>::actor = actor;
-						BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorWeaponSpeedChannel, float>::enable = enableSetEveryFrame;
-					}
-
-					logger::info("Started tracking graph of reference {} {:x}", refr->GetDisplayFullName(), refr->GetFormID());
-					Print(std::format("Started tracking graph of reference {} {:x}", refr->GetDisplayFullName(), refr->GetFormID()).c_str());
-				}
-			    else 
-				{
-					Print("Target object is not found!");
-				}
-
-				return true;
-			}
-	    }
-	}
-
-	void Install()
-	{
-		/*{
-#ifndef SKYRIM_SUPPORT_AE
-			const std::array callTargets{
-				REL::Relocation<std::uintptr_t>(REL::ID(36698), 0xB9),
-				REL::Relocation<std::uintptr_t>(REL::ID(36699), 0xC6),
-				REL::Relocation<std::uintptr_t>(REL::ID(36764), 0x11C),
-				REL::Relocation<std::uintptr_t>(REL::ID(36765), 0x131),
-				REL::Relocation<std::uintptr_t>(REL::ID(36766), 0x155),
-				REL::Relocation<std::uintptr_t>(REL::ID(36768), 0x11F),
-				REL::Relocation<std::uintptr_t>(REL::ID(36771), 0x11B),
-				REL::Relocation<std::uintptr_t>(REL::ID(37035), 0x208),
-				REL::Relocation<std::uintptr_t>(REL::ID(37842), 0xD0),
-				REL::Relocation<std::uintptr_t>(REL::ID(37997), 0x36),
-			};
-			const std::array jumpTargets{
-				REL::Relocation<std::uintptr_t>(REL::ID(40551), 0xA),
-			};
-#endif
-			for (const auto& target : callTargets) {
-				stl::write_thunk_call<ActorMediator_Process>(target.address());
-			}
-			for (const auto& target : jumpTargets) {
-				stl::write_thunk_jmp<ActorMediator_Process>(target.address());
-			}
-		}*/
-
-		/*{
-			const std::array targets{
-				REL::Relocation<std::uintptr_t>(REL::ID(37998), 0x6F),
-			};
-			for (const auto& target : targets) {
-				stl::write_thunk_call<Test>(target.address());
-			}
-		}*/
-
-		/*{
-			c
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, int, RE::ActorCopyGraphVariableChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorCopyGraphVariableChannel, int>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_int_ActorCopyGraphVariableChannel_[0]);
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, float, RE::ActorDirectionChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorDirectionChannel, float>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_float_ActorDirectionChannel_[0]);
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, float, RE::ActorLeftWeaponSpeedChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorLeftWeaponSpeedChannel, float>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_float_ActorLeftWeaponSpeedChannel_[0]);
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, bool, RE::ActorLookAtChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorLookAtChannel, bool>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_bool_ActorLookAtChannel_[0]);
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, float, RE::ActorPitchChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorPitchChannel, float>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_float_ActorPitchChannel_[0]);
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, float, RE::ActorPitchDeltaChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorPitchDeltaChannel, float>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_float_ActorPitchDeltaChannel_[0]);
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, float, RE::ActorRollChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorRollChannel, float>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_float_ActorRollChannel_[0]);
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, float, RE::ActorSpeedChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorSpeedChannel, float>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_float_ActorSpeedChannel_[0]);
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, float, RE::ActorTargetSpeedChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorTargetSpeedChannel, float>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_float_ActorTargetSpeedChannel_[0]);
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, float, RE::ActorTimeDeltaChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorTimeDeltaChannel, float>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_float_ActorTimeDeltaChannel_[0]);
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, float, RE::ActorTurnDeltaChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorTurnDeltaChannel, float>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_float_ActorTurnDeltaChannel_[0]);
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, int, RE::ActorWantBlockChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorWantBlockChannel, int>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_int_ActorWantBlockChannel_[0]);
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, float, RE::ActorWardHealthChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorWardHealthChannel, float>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_float_ActorWardHealthChannel_[0]);
-			stl::write_vfunc<RE::BSTAnimationGraphDataChannel<RE::Actor, float, RE::ActorWeaponSpeedChannel>, BSAnimationGraphChannel_PollChannelUpdateImpl<RE::ActorWeaponSpeedChannel, float>>(RE::VTABLE_BSTAnimationGraphDataChannel_Actor_float_ActorWeaponSpeedChannel_[0]);
-		}
-
-		{
-			const std::array targets{
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(62708, 63609), OFFSET(0, 0)),
-			};
-			for (const auto& target : targets) {
-				stl::write_thunk_jmp<BShkbAnimationGraph_SetGraphVariableInt>(target.address());
-			}
-		}
-
-		{
-			const std::array targets{
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(62694, 63615), OFFSET(0, 0)),
-			};
-			for (const auto& target : targets) {
-				stl::write_thunk_jmp<BShkbAnimationGraph_GetGraphVariableInt>(target.address());
-			}
-		}
-
-		{
-			const std::array targets{
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(62709, 63608), OFFSET(0, 0)),
-			};
-			for (const auto& target : targets) {
-				stl::write_thunk_jmp<BShkbAnimationGraph_SetGraphVariableFloat>(target.address());
-			}
-		}
-
-		{
-			const std::array targets{
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(62695, 63614), OFFSET(0, 0)),
-			};
-			for (const auto& target : targets) {
-				stl::write_thunk_jmp<BShkbAnimationGraph_GetGraphVariableFloat>(target.address());
-			}
-		}
-
-		{
-			const std::array targets{
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(62710, 63607), OFFSET(0, 0)),
-			};
-			for (const auto& target : targets) {
-				stl::write_thunk_jmp<BShkbAnimationGraph_SetGraphVariableBool>(target.address());
-			}
-		}
-
-		{
-			const std::array targets{
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(62696, 63613), OFFSET(0, 0)),
-			};
-			for (const auto& target : targets) {
-				stl::write_thunk_jmp<BShkbAnimationGraph_GetGraphVariableBool>(target.address());
-			}
-		}
-
-		{
-			const std::array targets{
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(62707, 63651), OFFSET(0, 0)),
-#ifdef SKYRIM_SUPPORT_AE
-				REL::Relocation<std::uintptr_t>(REL::ID(63652), 0),
-#endif
-			};
-			for (const auto& target : targets) {
-				stl::write_thunk_jmp<BShkbAnimationGraph_SetGraphVariableVector>(target.address());
-			}
-		}
-
-		{
-			const std::array targets{
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(62692, 63636), OFFSET(0, 0)),
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(62693, 63637), OFFSET(0, 0)),
-			};
-			for (const auto& target : targets) {
-				stl::write_thunk_jmp<BShkbAnimationGraph_GetGraphVariableVector>(target.address());
-			}
-		}
-
-#ifdef SKYRIM_SUPPORT_AE
-		{
-			const std::array targets{
-				REL::Relocation<std::uintptr_t>(REL::ID(63653), 0),
-			};
-			for (const auto& target : targets) {
-				stl::write_thunk_jmp<BShkbAnimationGraph_SetGraphVariableIntRef>(target.address());
-			}
-		}
-#endif*/
-		
-		if (const auto function = RE::SCRIPT_FUNCTION::LocateConsoleCommand("ClearAchievement"); function != nullptr) {
-			static RE::SCRIPT_PARAMETER params[] = {
-				{ "EventsState", RE::SCRIPT_PARAM_TYPE::kInt, true },
-				{ "VariablesState", RE::SCRIPT_PARAM_TYPE::kInt, true },
-				{ "ActionsState", RE::SCRIPT_PARAM_TYPE::kInt, true },
-			};
-
-			function->functionName = "StartGraphTracking";
-			function->shortName = "sgt";
-			function->helpString = "";
-			function->referenceFunction = false;
-			function->SetParameters(params);
-			function->executeFunction = &Console::StartGraphTracking::Execute;
-			function->conditionFunction = nullptr;
-
-			logger::info("installed StartGraphTracking");
-		}
-
-		logger::info("installed BehaviorGraph");
-	}
 }
 
 namespace Hooks
@@ -1383,10 +1245,20 @@ namespace Hooks
 		stl::write_vfunc<NiSkinInstance_RegisterStreamables>(RE::VTABLE_NiSkinInstance[0]);
 		stl::write_vfunc<NiSkinInstance_RegisterStreamables>(RE::VTABLE_BSDismemberSkinInstance[0]);
 
-		/*stl::write_vfunc<BSLightingShaderProperty_GetShaderPasses>(
+		/*stl::write_vfunc<BSLightingShaderProperty_GetRenderPasses>(
 			RE::VTABLE_BSLightingShaderProperty[0]);
-		stl::write_vfunc<BSLightingShader_SetupGeometry>(
-			RE::VTABLE_BSLightingShader[0]);*/
+		stl::write_vfunc<BSLightingShader_SetupGeometry>(RE::VTABLE_BSLightingShader[0]);
+		stl::write_vfunc<BSLightingShader_RestoreGeometry>(RE::VTABLE_BSLightingShader[0]);*/
+
+		/*{
+			const std::array targets{
+				REL::Relocation<std::uintptr_t>(RELOCATION_ID(100847, 107637), 0),
+			};
+			for (const auto& target : targets)
+			{
+				stl::write_thunk_jmp<BSBatchRenderer_Draw>(target.address());
+			}
+		}*/
 
 		{
 			const std::array targets{
