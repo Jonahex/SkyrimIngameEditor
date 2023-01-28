@@ -7,6 +7,7 @@
 #include <RE/B/bhkCollisionObject.h>
 #include <RE/B/bhkRigidBody.h>
 #include <RE/B/BSFadeNode.h>
+#include <RE/B/BSLagBoneController.h>
 #include <RE/B/BSLightingShaderMaterialEnvmap.h>
 #include <RE/B/BSLightingShaderMaterialEye.h>
 #include <RE/B/BSLightingShaderMaterialFacegenTint.h>
@@ -28,6 +29,7 @@
 #include <RE/N/NiParticleSystem.h>
 #include <RE/N/NiPSysModifier.h>
 #include <RE/N/NiSkinInstance.h>
+#include <RE/N/NiSingleInterpController.h>
 #include <RE/N/NiStream.h>
 #include <RE/N/NiStringExtraData.h>
 
@@ -1142,6 +1144,53 @@ namespace SIE
 
 			return wasEdited;
 		}
+
+		static bool BSLagBoneControllerEditor(void* object, void* context)
+		{
+			auto& lagBoneController = *static_cast<RE::BSLagBoneController*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat("Linear Velocity", &lagBoneController.linearVelocity))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Linear Rotation", &lagBoneController.linearRotation))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Maximum Distance", &lagBoneController.maximumDistance))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiSingleInterpControllerEditor(void* object, void* context)
+		{
+			auto& singleInterpController = *static_cast<RE::NiSingleInterpController*>(object);
+
+			bool wasEdited = false;
+
+			auto& rttiCache = RTTICache::Instance();
+
+			if (singleInterpController.interpolator != nullptr)
+			{
+				const std::string& typeName =
+					rttiCache.GetTypeName(singleInterpController.interpolator.get());
+				if (PushingCollapsingHeader(std::format("[Interpolator] <{}>", typeName).c_str()))
+				{
+					if (rttiCache.BuildEditor(singleInterpController.interpolator.get()))
+					{
+						wasEdited = true;
+					}
+					ImGui::TreePop();
+				}
+			}
+
+			return wasEdited;
+		}
 	}
 
 	bool DispatchableNiObjectEditor(const char* label, RE::NiObject& object)
@@ -1237,5 +1286,9 @@ namespace SIE
 			SNiObjectEditor::NiTimeControllerEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiControllerManager),
 			SNiObjectEditor::NiControllerManagerEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLagBoneController),
+			SNiObjectEditor::BSLagBoneControllerEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiSingleInterpController),
+			SNiObjectEditor::NiSingleInterpControllerEditor);
 	}
 }
