@@ -1149,25 +1149,21 @@ namespace SIE
 
 		auto& typeCache = vertexShaders[static_cast<size_t>(shader.shaderType.underlying())];
 		auto it = typeCache.find(descriptor);
-		if (it == typeCache.end())
+		if (it != typeCache.end())
 		{
-			const auto shaderBlob =
-				SShaderCache::CompileShader(ShaderClass::Vertex, shader, descriptor);
-			if (shaderBlob == nullptr)
-			{
-				return nullptr;
-			}
-			if (auto newShader = SShaderCache::CreateVertexShader(*shaderBlob,
-					shader.shaderType.get(), descriptor))
-			{
-				it = typeCache.insert_or_assign(descriptor, std::move(newShader)).first;
-			}
-			else
-			{
-				return nullptr;
-			}
+			return it->second.get();
 		}
-		return it->second.get();
+
+		if (IsAsync())
+		{
+			compilationQueue.Push({ ShaderClass::Vertex, shader, descriptor });
+		}
+		else
+		{
+			return MakeAndAddVertexShader(shader, descriptor);
+		}
+
+		return nullptr;
 	}
 
 	RE::BSGraphics::PixelShader* ShaderCache::GetPixelShader(const RE::BSShader& shader,
@@ -1180,25 +1176,21 @@ namespace SIE
 
 		auto& typeCache = pixelShaders[static_cast<size_t>(shader.shaderType.underlying())];
 		auto it = typeCache.find(descriptor);
-		if (it == typeCache.end())
+		if (it != typeCache.end())
 		{
-			const auto shaderBlob =
-				SShaderCache::CompileShader(ShaderClass::Pixel, shader, descriptor);
-			if (shaderBlob == nullptr)
-			{
-				return nullptr;
-			}
-			if (auto newShader = SShaderCache::CreatePixelShader(*shaderBlob,
-					shader.shaderType.get(), descriptor))
-			{
-				it = typeCache.insert_or_assign(descriptor, std::move(newShader)).first;
-			}
-			else
-			{
-				return nullptr;
-			}
+			return it->second.get();
 		}
-		return it->second.get();
+
+		if (IsAsync())
+		{
+			compilationQueue.Push({ ShaderClass::Pixel, shader, descriptor });
+		}
+		else
+		{
+			return MakeAndAddPixelShader(shader, descriptor);
+		}
+
+		return nullptr;
 	}
 
 	ShaderCache::~ShaderCache() 
@@ -1241,6 +1233,8 @@ namespace SIE
 			}
 			shaders.clear();
 		}
+
+		compilationQueue.Clear();
 	}
 
 	bool ShaderCache::IsEnabled() const
@@ -1251,5 +1245,112 @@ namespace SIE
 	void ShaderCache::SetEnabled(bool value)
 	{ 
 		isEnabled = value;
+	}
+
+	bool ShaderCache::IsAsync() const
+	{ 
+		return isAsync;
+	}
+
+	void ShaderCache::SetAsync(bool value)
+	{ 
+		isAsync = value;
+	}
+
+	ShaderCache::ShaderCache() 
+		: compilationThread(&ShaderCache::ProcessCompilationQueue, this)
+	{}
+
+	RE::BSGraphics::VertexShader* ShaderCache::MakeAndAddVertexShader(const RE::BSShader& shader,
+		uint32_t descriptor)
+	{
+		if (const auto shaderBlob =
+				SShaderCache::CompileShader(ShaderClass::Vertex, shader, descriptor))
+		{
+			if (auto newShader = SShaderCache::CreateVertexShader(*shaderBlob,
+					shader.shaderType.get(), descriptor))
+			{
+				return vertexShaders[static_cast<size_t>(shader.shaderType.get())].insert_or_assign(descriptor, std::move(newShader))
+				    .first->second.get();
+			}
+		}
+		return nullptr;
+	}
+
+	RE::BSGraphics::PixelShader* ShaderCache::MakeAndAddPixelShader(const RE::BSShader& shader,
+		uint32_t descriptor)
+	{
+		if (const auto shaderBlob =
+				SShaderCache::CompileShader(ShaderClass::Pixel, shader, descriptor))
+		{
+			if (auto newShader = SShaderCache::CreatePixelShader(*shaderBlob,
+					shader.shaderType.get(), descriptor))
+			{
+				return pixelShaders[static_cast<size_t>(shader.shaderType.get())]
+				    .insert_or_assign(descriptor, std::move(newShader))
+				    .first->second.get();
+			}
+		}
+		return nullptr;
+	}
+
+	void ShaderCache::ProcessCompilationQueue() 
+	{ 
+		while (true)
+		{
+			if (auto task = compilationQueue.Pop())
+			{
+				task->Perform();
+			}
+		}
+	}
+
+	ShaderCompilationTask::ShaderCompilationTask(ShaderClass aShaderClass,
+		const RE::BSShader& aShader,
+		uint32_t aDescriptor) 
+		: shaderClass(aShaderClass)
+		, shader(aShader)
+		, descriptor(aDescriptor)
+	{}
+
+	void ShaderCompilationTask::Perform()
+	{ 
+		if (shaderClass == ShaderClass::Vertex)
+		{
+			ShaderCache::Instance().MakeAndAddVertexShader(shader, descriptor);
+		}
+		else if (shaderClass == ShaderClass::Pixel)
+		{
+			ShaderCache::Instance().MakeAndAddPixelShader(shader, descriptor);
+		}
+	}
+
+	std::optional<ShaderCompilationTask> CompilationQueue::Pop() 
+	{
+		std::unique_lock lock(mutex);
+		if (queue.empty())
+		{
+			return {};
+		}
+		conditionVariable.wait(lock, [this]() { return !queue.empty(); });
+		auto task = queue.front();
+		queue.pop();
+		return task;
+	}
+
+	void CompilationQueue::Push(const ShaderCompilationTask& task)
+	{
+		std::lock_guard lockGuard(mutex);
+		queue.push(task);
+		conditionVariable.notify_one();
+	}
+
+	void CompilationQueue::Clear()
+	{
+		std::lock_guard lock(mutex);
+		while (!queue.empty())
+		{
+			queue.pop();
+		}
 	}
 }

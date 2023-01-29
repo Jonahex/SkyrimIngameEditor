@@ -280,6 +280,11 @@ namespace SIE
 			if (PushingCollapsingHeader("Editor"))
 			{
 				auto& shaderCache = ShaderCache::Instance();
+				bool isAsync = shaderCache.IsAsync();
+				if (ImGui::Checkbox("Async Shaders Loading", &isAsync))
+				{
+					shaderCache.SetAsync(isAsync);
+				}
 				bool useCustomShaders = shaderCache.IsEnabled();
 				if (ImGui::Checkbox("Use Custom Shaders", &useCustomShaders))
 				{
