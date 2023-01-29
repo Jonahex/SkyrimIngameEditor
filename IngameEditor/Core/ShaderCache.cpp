@@ -1147,11 +1147,14 @@ namespace SIE
 			return nullptr;
 		}
 
-		auto& typeCache = vertexShaders[static_cast<size_t>(shader.shaderType.underlying())];
-		auto it = typeCache.find(descriptor);
-		if (it != typeCache.end())
 		{
-			return it->second.get();
+			std::lock_guard lockGuard(vertexShadersMutex);
+			auto& typeCache = vertexShaders[static_cast<size_t>(shader.shaderType.underlying())];
+			auto it = typeCache.find(descriptor);
+			if (it != typeCache.end())
+			{
+				return it->second.get();
+			}
 		}
 
 		if (IsAsync())
@@ -1174,11 +1177,14 @@ namespace SIE
 			return nullptr;
 		}
 
-		auto& typeCache = pixelShaders[static_cast<size_t>(shader.shaderType.underlying())];
-		auto it = typeCache.find(descriptor);
-		if (it != typeCache.end())
 		{
-			return it->second.get();
+			std::lock_guard lockGuard(pixelShadersMutex);
+			auto& typeCache = pixelShaders[static_cast<size_t>(shader.shaderType.underlying())];
+			auto it = typeCache.find(descriptor);
+			if (it != typeCache.end())
+			{
+				return it->second.get();
+			}
 		}
 
 		if (IsAsync())
@@ -1258,8 +1264,13 @@ namespace SIE
 	}
 
 	ShaderCache::ShaderCache() 
-		: compilationThread(&ShaderCache::ProcessCompilationQueue, this)
-	{}
+	{
+		constexpr size_t compilationThreadCount = 6;
+		for (size_t threadIndex = 0; threadIndex < compilationThreadCount; ++threadIndex)
+		{
+			compilationThreads.push_back(std::jthread(&ShaderCache::ProcessCompilationQueue, this));
+		}
+	}
 
 	RE::BSGraphics::VertexShader* ShaderCache::MakeAndAddVertexShader(const RE::BSShader& shader,
 		uint32_t descriptor)
@@ -1270,6 +1281,8 @@ namespace SIE
 			if (auto newShader = SShaderCache::CreateVertexShader(*shaderBlob,
 					shader.shaderType.get(), descriptor))
 			{
+				std::lock_guard lockGuard(vertexShadersMutex);
+
 				return vertexShaders[static_cast<size_t>(shader.shaderType.get())].insert_or_assign(descriptor, std::move(newShader))
 				    .first->second.get();
 			}
@@ -1286,6 +1299,8 @@ namespace SIE
 			if (auto newShader = SShaderCache::CreatePixelShader(*shaderBlob,
 					shader.shaderType.get(), descriptor))
 			{
+				std::lock_guard lockGuard(pixelShadersMutex);
+
 				return pixelShaders[static_cast<size_t>(shader.shaderType.get())]
 				    .insert_or_assign(descriptor, std::move(newShader))
 				    .first->second.get();
@@ -1298,10 +1313,7 @@ namespace SIE
 	{ 
 		while (true)
 		{
-			if (auto task = compilationQueue.Pop())
-			{
-				task->Perform();
-			}
+			compilationQueue.WaitPop().Perform();
 		}
 	}
 
@@ -1325,13 +1337,9 @@ namespace SIE
 		}
 	}
 
-	std::optional<ShaderCompilationTask> CompilationQueue::Pop() 
+	ShaderCompilationTask CompilationQueue::WaitPop() 
 	{
 		std::unique_lock lock(mutex);
-		if (queue.empty())
-		{
-			return {};
-		}
 		conditionVariable.wait(lock, [this]() { return !queue.empty(); });
 		auto task = queue.front();
 		queue.pop();
@@ -1340,8 +1348,9 @@ namespace SIE
 
 	void CompilationQueue::Push(const ShaderCompilationTask& task)
 	{
-		std::lock_guard lockGuard(mutex);
+		std::unique_lock lock(mutex);
 		queue.push(task);
+		lock.unlock();
 		conditionVariable.notify_one();
 	}
 

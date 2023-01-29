@@ -29,7 +29,7 @@ namespace SIE
 	class CompilationQueue
 	{
 	public:
-		std::optional<ShaderCompilationTask> Pop();
+		ShaderCompilationTask WaitPop();
 		void Push(const ShaderCompilationTask& task);
 		void Clear();
 
@@ -84,6 +84,8 @@ namespace SIE
 
 		bool isAsync = true;
 		CompilationQueue compilationQueue; 
-		std::jthread compilationThread;
+		std::vector<std::jthread> compilationThreads;
+		std::mutex vertexShadersMutex;
+		std::mutex pixelShadersMutex;
 	};
 }
