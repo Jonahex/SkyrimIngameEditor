@@ -3,6 +3,7 @@
 #include <RE/B/BSShader.h>
 
 #include <condition_variable>
+#include <unordered_set>
 
 namespace SIE
 {
@@ -17,24 +18,43 @@ namespace SIE
 	class ShaderCompilationTask
 	{
 	public:
-		ShaderCompilationTask(ShaderClass shaderClass, const RE::BSShader& shader, uint32_t descriptor);
-		void Perform();
+		ShaderCompilationTask(ShaderClass shaderClass, const RE::BSShader& shader,
+			uint32_t descriptor);
+		void Perform() const;
+
+		size_t GetId() const;
+
+		bool operator==(const ShaderCompilationTask& other) const;
 
 	protected:
 		ShaderClass shaderClass;
 		const RE::BSShader& shader;
 		uint32_t descriptor;
 	};
+}
 
-	class CompilationQueue
+template <>
+struct std::hash<SIE::ShaderCompilationTask>
+{
+	std::size_t operator()(const SIE::ShaderCompilationTask& task) const noexcept
+	{
+		return task.GetId();
+	}
+};
+
+namespace SIE
+{
+	class CompilationSet
 	{
 	public:
-		ShaderCompilationTask WaitPop();
-		void Push(const ShaderCompilationTask& task);
+		ShaderCompilationTask WaitTake();
+		void Add(const ShaderCompilationTask& task);
+		void Complete(const ShaderCompilationTask& task);
 		void Clear();
 
 	private:
-		std::queue<ShaderCompilationTask> queue;
+		std::unordered_set<ShaderCompilationTask> availableTasks;
+		std::unordered_set<ShaderCompilationTask> tasksInProgress;
 		std::condition_variable conditionVariable;
 		std::mutex mutex;
 	};
@@ -68,7 +88,7 @@ namespace SIE
 
 	private:
 		ShaderCache();
-		void ProcessCompilationQueue();
+		void ProcessCompilationSet();
 
 		~ShaderCache();
 
@@ -83,7 +103,7 @@ namespace SIE
 		uint32_t disabledClasses = 0;
 
 		bool isAsync = true;
-		CompilationQueue compilationQueue; 
+		CompilationSet compilationSet; 
 		std::vector<std::jthread> compilationThreads;
 		std::mutex vertexShadersMutex;
 		std::mutex pixelShadersMutex;

@@ -1035,17 +1035,6 @@ namespace SIE
 				}
 			}
 
-			const auto result = (*device)->CreateVertexShader(shaderData.GetBufferPointer(), newShader->byteCodeSize, nullptr, &newShader->shader);
-			if (FAILED(result))
-			{
-				logger::error("Failed to create vertex shader {}::{}", magic_enum::enum_name(type),
-					descriptor);
-				if (newShader->shader != nullptr)
-				{
-					newShader->shader->Release();
-				}
-				return nullptr;
-			}  
 			return newShader;
 		}
 
@@ -1112,19 +1101,6 @@ namespace SIE
 				}
 			}
 
-			const auto result = (*device)->CreatePixelShader(shaderData.GetBufferPointer(),
-				shaderData.GetBufferSize(),
-				nullptr, &newShader->shader);
-			if (FAILED(result))
-			{
-				logger::error("Failed to create pixel shader {}::{}", magic_enum::enum_name(type),
-					descriptor);
-				if (newShader->shader != nullptr)
-				{
-					newShader->shader->Release();
-				}
-				return nullptr;
-			}  
 			return newShader;
 		}
 
@@ -1159,7 +1135,7 @@ namespace SIE
 
 		if (IsAsync())
 		{
-			compilationQueue.Push({ ShaderClass::Vertex, shader, descriptor });
+			compilationSet.Add({ ShaderClass::Vertex, shader, descriptor });
 		}
 		else
 		{
@@ -1189,7 +1165,7 @@ namespace SIE
 
 		if (IsAsync())
 		{
-			compilationQueue.Push({ ShaderClass::Pixel, shader, descriptor });
+			compilationSet.Add({ ShaderClass::Pixel, shader, descriptor });
 		}
 		else
 		{
@@ -1240,7 +1216,7 @@ namespace SIE
 			shaders.clear();
 		}
 
-		compilationQueue.Clear();
+		compilationSet.Clear();
 	}
 
 	bool ShaderCache::IsEnabled() const
@@ -1265,10 +1241,10 @@ namespace SIE
 
 	ShaderCache::ShaderCache() 
 	{
-		constexpr size_t compilationThreadCount = 6;
+		static const auto compilationThreadCount = max(1, (static_cast<int32_t>(std::thread::hardware_concurrency()) - 4));
 		for (size_t threadIndex = 0; threadIndex < compilationThreadCount; ++threadIndex)
 		{
-			compilationThreads.push_back(std::jthread(&ShaderCache::ProcessCompilationQueue, this));
+			compilationThreads.push_back(std::jthread(&ShaderCache::ProcessCompilationSet, this));
 		}
 	}
 
@@ -1278,12 +1254,28 @@ namespace SIE
 		if (const auto shaderBlob =
 				SShaderCache::CompileShader(ShaderClass::Vertex, shader, descriptor))
 		{
-			if (auto newShader = SShaderCache::CreateVertexShader(*shaderBlob,
-					shader.shaderType.get(), descriptor))
-			{
-				std::lock_guard lockGuard(vertexShadersMutex);
+			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
 
-				return vertexShaders[static_cast<size_t>(shader.shaderType.get())].insert_or_assign(descriptor, std::move(newShader))
+			auto newShader = SShaderCache::CreateVertexShader(*shaderBlob, shader.shaderType.get(),
+				descriptor);
+
+			std::lock_guard lockGuard(vertexShadersMutex);
+
+			const auto result = (*device)->CreateVertexShader(shaderBlob->GetBufferPointer(),
+				newShader->byteCodeSize, nullptr, &newShader->shader);
+			if (FAILED(result))
+			{
+				logger::error("Failed to create vertex shader {}::{}",
+					magic_enum::enum_name(shader.shaderType.get()), descriptor);
+				if (newShader->shader != nullptr)
+				{
+					newShader->shader->Release();
+				}
+			}
+			else
+			{
+				return vertexShaders[static_cast<size_t>(shader.shaderType.get())]
+				    .insert_or_assign(descriptor, std::move(newShader))
 				    .first->second.get();
 			}
 		}
@@ -1296,11 +1288,26 @@ namespace SIE
 		if (const auto shaderBlob =
 				SShaderCache::CompileShader(ShaderClass::Pixel, shader, descriptor))
 		{
-			if (auto newShader = SShaderCache::CreatePixelShader(*shaderBlob,
-					shader.shaderType.get(), descriptor))
-			{
-				std::lock_guard lockGuard(pixelShadersMutex);
+			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
 
+			auto newShader = SShaderCache::CreatePixelShader(*shaderBlob, shader.shaderType.get(),
+				descriptor);
+
+			std::lock_guard lockGuard(pixelShadersMutex);
+			const auto result = (*device)->CreatePixelShader(shaderBlob->GetBufferPointer(),
+				shaderBlob->GetBufferSize(), nullptr, &newShader->shader);
+			if (FAILED(result))
+			{
+				logger::error("Failed to create pixel shader {}::{}",
+					magic_enum::enum_name(shader.shaderType.get()),
+					descriptor);
+				if (newShader->shader != nullptr)
+				{
+					newShader->shader->Release();
+				}
+			}
+			else
+			{
 				return pixelShaders[static_cast<size_t>(shader.shaderType.get())]
 				    .insert_or_assign(descriptor, std::move(newShader))
 				    .first->second.get();
@@ -1309,11 +1316,13 @@ namespace SIE
 		return nullptr;
 	}
 
-	void ShaderCache::ProcessCompilationQueue() 
+	void ShaderCache::ProcessCompilationSet() 
 	{ 
 		while (true)
 		{
-			compilationQueue.WaitPop().Perform();
+			const auto& task = compilationSet.WaitTake();
+			task.Perform();
+			compilationSet.Complete(task);
 		}
 	}
 
@@ -1325,7 +1334,7 @@ namespace SIE
 		, descriptor(aDescriptor)
 	{}
 
-	void ShaderCompilationTask::Perform()
+	void ShaderCompilationTask::Perform() const
 	{ 
 		if (shaderClass == ShaderClass::Vertex)
 		{
@@ -1337,29 +1346,53 @@ namespace SIE
 		}
 	}
 
-	ShaderCompilationTask CompilationQueue::WaitPop() 
+	size_t ShaderCompilationTask::GetId() const
+	{ 
+		return descriptor + (static_cast<size_t>(shader.shaderType.underlying()) << 32) +
+		       (static_cast<size_t>(shaderClass) << 60);
+	}
+
+	bool ShaderCompilationTask::operator==(const ShaderCompilationTask& other) const
+	{ 
+		return GetId() == other.GetId();
+	}
+
+	ShaderCompilationTask CompilationSet::WaitTake() 
 	{
 		std::unique_lock lock(mutex);
-		conditionVariable.wait(lock, [this]() { return !queue.empty(); });
-		auto task = queue.front();
-		queue.pop();
+		conditionVariable.wait(lock, [this]() { return !availableTasks.empty(); });
+
+		auto node = availableTasks.extract(availableTasks.begin());
+		auto task = node.value();
+		tasksInProgress.insert(std::move(node));
 		return task;
 	}
 
-	void CompilationQueue::Push(const ShaderCompilationTask& task)
+	void CompilationSet::Add(const ShaderCompilationTask& task)
 	{
 		std::unique_lock lock(mutex);
-		queue.push(task);
-		lock.unlock();
-		conditionVariable.notify_one();
+		auto inProgressIt = tasksInProgress.find(task);
+		if (inProgressIt == tasksInProgress.end())
+		{
+			auto [availableIt, wasAdded] = availableTasks.insert(task);
+			lock.unlock();
+			if (wasAdded)
+			{
+				conditionVariable.notify_one();
+			}
+		}
 	}
 
-	void CompilationQueue::Clear()
+	void CompilationSet::Complete(const ShaderCompilationTask& task)
+	{
+		std::unique_lock lock(mutex);
+		tasksInProgress.erase(task);
+	}
+
+	void CompilationSet::Clear()
 	{
 		std::lock_guard lock(mutex);
-		while (!queue.empty())
-		{
-			queue.pop();
-		}
+		availableTasks.clear();
+		tasksInProgress.clear();
 	}
 }
