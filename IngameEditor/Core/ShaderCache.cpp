@@ -87,56 +87,6 @@ namespace SIE
 			AdditionalAlphaMask		= 1 << 23,
 		};
 
-		enum class BloodSplatterShaderTechniques
-		{
-			Splatter				= 0,
-			Flare					= 1,
-		};
-
-		enum class DistantTreeShaderTechniques
-		{
-			DistantTreeBlock		= 0,
-			Depth					= 1,
-		};
-
-		enum class DistantTreeShaderFlags
-		{
-			AlphaTest				= 0x10000,
-		};
-
-		enum class SkyShaderTechniques
-		{
-			SunOcclude				= 0,
-			SunGlare				= 1,
-			MoonAndStarsMask		= 2,
-			Stars					= 3,
-			Clouds					= 4,
-			CloudsLerp				= 5,
-			CloudsFade				= 6,
-			Texture					= 7,
-			Sky						= 8,
-		};
-
-		enum class GrassShaderTechniques
-		{
-			RenderDepth				= 8,
-		};
-
-		enum class GrassShaderFlags
-		{
-			AlphaTest				= 0x10000,
-		};
-
-		enum class ParticleShaderTechniques
-		{
-			Particles				= 0,
-			ParticlesGryColor		= 1,
-			ParticlesGryAlpha		= 2,
-			ParticlesGryColorAlpha	= 3,
-			EnvCubeSnow				= 4,
-			EnvCubeRain				= 5,
-		};
-
 		static void GetLightingShaderDefines(uint32_t descriptor,
 			D3D_SHADER_MACRO* defines)
 		{
@@ -155,6 +105,12 @@ namespace SIE
 			VanillaGetLightingShaderDefines(descriptor, defines);
 		}
 
+		enum class BloodSplatterShaderTechniques
+		{
+			Splatter = 0,
+			Flare = 1,
+		};
+
 		static void GetBloodSplaterShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
 		{
 			if (descriptor == static_cast<uint32_t>(BloodSplatterShaderTechniques::Splatter))
@@ -169,6 +125,17 @@ namespace SIE
 			}
 			defines[0] = { nullptr, nullptr };
 		}
+
+		enum class DistantTreeShaderTechniques
+		{
+			DistantTreeBlock = 0,
+			Depth = 1,
+		};
+
+		enum class DistantTreeShaderFlags
+		{
+			AlphaTest = 0x10000,
+		};
 
 		static void GetDistantTreeShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
 		{
@@ -185,6 +152,19 @@ namespace SIE
 			}
 			defines[0] = { nullptr, nullptr };
 		}
+
+		enum class SkyShaderTechniques
+		{
+			SunOcclude = 0,
+			SunGlare = 1,
+			MoonAndStarsMask = 2,
+			Stars = 3,
+			Clouds = 4,
+			CloudsLerp = 5,
+			CloudsFade = 6,
+			Texture = 7,
+			Sky = 8,
+		};
 
 		static void GetSkyShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
 		{
@@ -257,6 +237,16 @@ namespace SIE
 			defines[0] = { nullptr, nullptr };
 		}
 
+		enum class GrassShaderTechniques
+		{
+			RenderDepth = 8,
+		};
+
+		enum class GrassShaderFlags
+		{
+			AlphaTest = 0x10000,
+		};
+
 		static void GetGrassShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
 		{
 			const auto technique = descriptor & 0b1111;
@@ -272,6 +262,16 @@ namespace SIE
 			}
 			defines[0] = { nullptr, nullptr };
 		}
+
+		enum class ParticleShaderTechniques
+		{
+			Particles = 0,
+			ParticlesGryColor = 1,
+			ParticlesGryAlpha = 2,
+			ParticlesGryColorAlpha = 3,
+			EnvCubeSnow = 4,
+			EnvCubeRain = 5,
+		};
 
 		static void GetParticleShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
 		{
@@ -482,6 +482,124 @@ namespace SIE
 			defines[0] = { nullptr, nullptr };
 		}
 
+		enum class WaterShaderTechniques
+		{
+			Underwater = 8,
+			Lod = 9,
+			Stencil = 10,
+			Simple = 11,
+		};
+
+		enum class WaterShaderFlags
+		{
+			Vc = 1 << 0,
+			NormalTexCoord = 1 << 1,
+			Reflections = 1 << 2,
+			Refractions = 1 << 3,
+			Depth = 1 << 4,
+			Interior = 1 << 5,
+			Wading = 1 << 6,
+			VertexAlphaDepth = 1 << 7,
+			Cubemap = 1 << 8,
+			Flowmap = 1 << 9,
+			BlendNormals = 1 << 10,
+		};
+
+		static void GetWaterShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
+		{
+			defines[0] = { "WATER", nullptr };
+			defines[1] = { "FOG", nullptr };
+			defines += 2;
+
+			if (descriptor & static_cast<uint32_t>(WaterShaderFlags::Vc))
+			{
+				defines[0] = { "VC", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(WaterShaderFlags::NormalTexCoord))
+			{
+				defines[0] = { "NORMAL_TEXCOORD", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(WaterShaderFlags::Reflections))
+			{
+				defines[0] = { "REFLECTIONS", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(WaterShaderFlags::Refractions))
+			{
+				defines[0] = { "REFRACTIONS", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(WaterShaderFlags::Depth))
+			{
+				defines[0] = { "DEPTH", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(WaterShaderFlags::Interior))
+			{
+				defines[0] = { "INTERIOR", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(WaterShaderFlags::Wading))
+			{
+				defines[0] = { "WADING", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(WaterShaderFlags::VertexAlphaDepth))
+			{
+				defines[0] = { "VERTEX_ALPHA_DEPTH", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(WaterShaderFlags::Cubemap))
+			{
+				defines[0] = { "CUBEMAP", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(WaterShaderFlags::Flowmap))
+			{
+				defines[0] = { "FLOWMAP", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(WaterShaderFlags::BlendNormals))
+			{
+				defines[0] = { "BLEND_NORMALS", nullptr };
+				++defines;
+			}
+
+			const auto technique = (descriptor >> 11) & 0xF;
+			if (technique == static_cast<uint32_t>(WaterShaderTechniques::Underwater))
+			{
+				defines[0] = { "UNDERWATER", nullptr };
+				++defines;
+			}
+			else if (technique == static_cast<uint32_t>(WaterShaderTechniques::Lod))
+			{
+				defines[0] = { "LOD", nullptr };
+				++defines;
+			}
+			else if (technique == static_cast<uint32_t>(WaterShaderTechniques::Stencil))
+			{
+				defines[0] = { "STENCIL", nullptr };
+				++defines;
+			}
+			else if (technique == static_cast<uint32_t>(WaterShaderTechniques::Simple))
+			{
+				defines[0] = { "SIMPLE", nullptr };
+				++defines;
+			}
+			else if (technique < 8)
+			{
+				static constexpr std::array<const char*, 8> numLightDefines = { { "0", "1", "2", "3", "4",
+					"5", "6", "7" } };
+				defines[0] = { "SPECULAR", nullptr };
+				defines[1] = { "NUM_SPECULAR_LIGHTS", numLightDefines[technique] };
+				defines += 2;
+			}
+
+			defines[0] = { nullptr, nullptr };
+		}
+
 		static void GetShaderDefines(RE::BSShader::Type type, uint32_t descriptor,
 			D3D_SHADER_MACRO* defines)
 		{
@@ -492,6 +610,9 @@ namespace SIE
 				break;
 			case RE::BSShader::Type::Sky:
 				GetSkyShaderDefines(descriptor, defines);
+				break;
+			case RE::BSShader::Type::Water:
+				GetWaterShaderDefines(descriptor, defines);
 				break;
 			case RE::BSShader::Type::BloodSplatter:
 				GetBloodSplaterShaderDefines(descriptor, defines);
@@ -716,6 +837,56 @@ namespace SIE
 				{ "BaseColor", 15 },
 				{ "BaseColorScale", 16 },
 				{ "LightingInfluence", 17 },
+			};
+
+			auto& waterVS = result[static_cast<size_t>(RE::BSShader::Type::Water)]
+								   [static_cast<size_t>(ShaderClass::Vertex)];
+			waterVS = {
+				{ "WorldViewProj", 0 },
+				{ "World", 1 },
+				{ "PreviousWorld", 2 },
+				{ "QPosAdjust", 3 },
+				{ "ObjectUV", 4 },
+				{ "NormalsScroll0", 5 },
+				{ "NormalsScroll1", 6 },
+				{ "NormalsScale", 7 },
+				{ "VSFogParam", 8 },
+				{ "VSFogNearColor", 9 },
+				{ "VSFogFarColor", 10 },
+				{ "CellTexCoordOffset", 11 },
+				{ "SubTexOffset", 12 },
+				{ "PosAdjust", 13 },
+				{ "MatProj", 14 },
+			};
+
+			auto& waterPS = result[static_cast<size_t>(RE::BSShader::Type::Water)]
+								   [static_cast<size_t>(ShaderClass::Pixel)];
+			waterPS = {
+				{ "TextureProj", 0 },
+				{ "ShallowColor", 1 },
+				{ "DeepColor", 2 },
+				{ "ReflectionColor", 3 },
+				{ "FresnelRI", 4 },
+				{ "BlendRadius", 5 },
+				{ "PosAdjust", 6 },
+				{ "ReflectPlane", 7 },
+				{ "CameraData", 8 },
+				{ "ProjData", 9 },
+				{ "VarAmounts", 10 },
+				{ "FogParam", 11 },
+				{ "FogNearColor", 12 },
+				{ "FogFarColor", 13 },
+				{ "SunDir", 14 },
+				{ "SunColor", 15 },
+				{ "NumLights", 16 },
+				{ "LightPos", 17 },
+				{ "LightColor", 18 },
+				{ "WaterParams", 19 },
+				{ "DepthControl", 20 },
+				{ "SSRParams", 21 },
+				{ "SSRParams2", 22 },
+				{ "NormalsAmplitude", 23 },
+				{ "VPOSOffset", 24 },
 			};
 
 			return result;

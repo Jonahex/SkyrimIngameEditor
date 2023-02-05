@@ -99,7 +99,7 @@ namespace SIE
 			static_cast<size_t>(RE::BSShader::Type::Total)>
 			pixelShaders;
 
-		bool isEnabled = true;
+		bool isEnabled = false;
 		uint32_t disabledClasses = 0;
 
 		bool isAsync = true;
