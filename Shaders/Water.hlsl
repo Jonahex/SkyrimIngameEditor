@@ -245,7 +245,15 @@ Texture2D<float4> FlowMapNormalsTex             : register(t9);
 Texture2D<float4> SSReflectionTex               : register(t10);
 Texture2D<float4> RawSSReflectionTex            : register(t11);
 
-cbuffer PerTechnique : register(b0)
+cbuffer PerFrame                                : register(b12)
+{
+	float4 UnknownPerFrame1[12]					: packoffset(c0);
+	row_major float4x4 ScreenProj				: packoffset(c12);
+	row_major float4x4 PreviousScreenProj		: packoffset(c16);
+	float4 UnknownPerFrame2[23]					: packoffset(c20);
+}
+
+cbuffer PerTechnique                            : register(b0)
 {
 	float4 VPOSOffset					        : packoffset(c0);
 	float4 PosAdjust					        : packoffset(c1);
@@ -254,7 +262,7 @@ cbuffer PerTechnique : register(b0)
 	float4 SunColor						        : packoffset(c4);
 }
 
-cbuffer PerMaterial : register(b1)
+cbuffer PerMaterial                             : register(b1)
 {
 	float4 ShallowColor					        : packoffset(c0);
 	float4 DeepColor					        : packoffset(c1);
@@ -272,167 +280,79 @@ cbuffer PerMaterial : register(b1)
 	float4 SSRParams2					        : packoffset(c13);
 }
 
-cbuffer PerFrame : register(b12)
-{
-	float4 cb12[43];
-}
-
 PS_OUTPUT main(PS_INPUT input)
 {
 	PS_OUTPUT psout;
 
-#if defined(SIMPLE) || defined(UNDERWATER)
-    float4 r0, r1, r2, r3;
+#if defined(SIMPLE) || defined(UNDERWATER) || defined(LOD)
+    float distanceFraction = saturate(
+		lerp(UnknownPerFrame2[22].w, 1, (input.WPosition.w - 8192) / (WaterParams.x - 8192)));
+	float distanceMul = saturate(lerp(VarAmounts.z, 1, -(distanceFraction - 1))) - 1;
 
-    float3 normals1;
-	normals1 = Normals01Tex.Sample(Normals01Sampler, input.TexCoord1.xy).xyz;
-    normals1 = normals1 * float3(2, 2, 2) + float3(-1, -1, -2);
+	float4 depthControl = DepthControl * distanceMul + 1;
 
-    float3 normals2;
-    normals2 = Normals02Tex.Sample(Normals02Sampler, input.TexCoord1.zw).xyz;
-    normals2 = normals2 * float3(2, 2, 2) + float3(-1, -1, -1);
+	float3 normals1 = Normals01Tex.Sample(Normals01Sampler, input.TexCoord1.xy).xyz * 2.0.xxx +
+	                  float3(-1, -1, -2);
 
-    float3 normals3;
-    normals3 = Normals03Tex.Sample(Normals03Sampler, input.TexCoord2.xy).xyz;
-    normals3 = normals3 * float3(2, 2, 2) + float3(-1, -1, -1);
+#if !defined(LOD)
+	float3 normals2 =
+		Normals02Tex.Sample(Normals02Sampler, input.TexCoord1.zw).xyz * 2.0.xxx - 1.0.xxx;
+	float3 normals3 =
+		Normals03Tex.Sample(Normals03Sampler, input.TexCoord2.xy).xyz * 2.0.xxx - 1.0.xxx;
 
-    r0.xyz = float3(0, 0, 1);
-    r0.xyz += NormalsAmplitude.xxx * normals1;
-    r0.xyz += NormalsAmplitude.yyy * normals2;
-    r0.xyz += NormalsAmplitude.zzz * normals3;
-    r0.xyz = normalize(r0.xyz) - float3(0, 0, 1);
+    float3 blendedNormal =
+		normalize(float3(0, 0, 1) + NormalsAmplitude.xxx * normals1 +
+				  NormalsAmplitude.yyy * normals2 + NormalsAmplitude.zzz * normals3);
 
-    r0.w = input.WPosition.w - 8192;
-    r1.x = WaterParams.x - 8192;
-    r0.w = r0.w / r1.x;
-    r1.x = 1 - cb12[42].w;
-    r0.w = saturate(r0.w * r1.x + cb12[42].w);
-
-    r1.x = r0.w - 1;
-    r1.y = 1 - VarAmounts.z;
-    r1.x = saturate(-r1.x * r1.y + VarAmounts.z) - 1;
-    r1.xyz = DepthControl.xzw * r1.xxx + float3(1, 1, 1);
-    r0.xyz = r1.yyy * r0.xyz + float3(0, 0, 1);
-
-    r0.xyz = normalize(r0.xyz);
-    r2.xyz = normalize(input.WPosition.xyz);
-    
-    r1.y = dot(r2.xyz, r0.xyz) * 2;
-    r3.xyz = r0.xyz * -r1.yyy + r2.xyz;
-    r1.y = 1 - saturate(dot(-r2.xyz, r0.xyz));
-
-    r1.w = saturate(dot(r3.xyz, SunDir.xyz));
-    r1.w = exp2(VarAmounts.x * log2(r1.w));
-
-    r2.xyz = SunColor.xyz * SunDir.www;
-    r3.xyz = r2.xyz * r1.www;
-    r1.w = saturate(dot(r0.xyz, float3(-99.0 / 1000.0, -99.0 / 1000.0, 99.0 / 100.0)));
-    r0.x = saturate(dot(SunDir.xyz, r0.xyz));
-    r0.y = exp2(ShallowColor.w * log2(r1.w));
-    r2.xyz = r0.yyy * r2.xyz;
-    r2.xyz = WaterParams.zzz * r2.xyz;
-    r2.xyz = r3.xyz * DeepColor.www + r2.xyz;
-
-    r0.y = r1.y * r1.y;
-    r0.y = r0.y * r0.y;
-    r0.y = r1.y * r0.y;
-    r0.z = 1 - FresnelRI.x;
-    r0.y = r0.z * r0.y + FresnelRI.x;
-    r0.z = r0.y * r1.x - 1;
-    r0.z = r0.w * r0.z + 1;
-    
-	r1.xyw = DeepColor.xyz - ShallowColor.xyz;
-    r1.xyw = r0.yyy * r1.xyw + ShallowColor.xyz;
-    r0.xyw = r1.xyw * r0.xxx;
-    r1.xyw = ReflectionColor.xyz * VarAmounts.yyy - r0.xyw;
-    r0.xyz = r0.zzz * r1.xyw + r0.xyw;
-    r0.xyz = r2.xyz * r1.zzz + r0.xyz;
-    r1.xyz = input.FogParam.xyz - r0.xyz;
-    r0.xyz = input.FogParam.www * r1.xyz + r0.xyz;
-
-    psout.Lighting = saturate(float4(r0.xyz * PosAdjust.www, 0));
+	float3 finalNormal = normalize(lerp(float3(0, 0, 1), blendedNormal, depthControl.zzz));
+#else
+	float3 finalNormal =
+		normalize(float3(0, 0, 1) + NormalsAmplitude.xxx * normals1) - float3(0, 0, 1);
 #endif
 
-#if defined(STENCIL)
-    float4 r0;
-    float4 r1;
-
-	r0.xyz = ddx_coarse(input.WorldPosition.zxy);
-	r1.xyz = ddy_coarse(input.WorldPosition.yzx);
+    float3 viewDirection = normalize(input.WPosition.xyz);
     
-    r0.xyz = normalize(cross(r0.yzx, r1.zxy));
-    r1.xyz = normalize(input.WorldPosition.xyz);
+	float VdotN = dot(viewDirection, finalNormal);
+	float3 reflectionDirection = finalNormal * -(VdotN * 2).xxx + viewDirection;
 
-    psout.Lighting = float4(0, 0, dot(r1.xyz, r0.xyz), 0);
+	float refelectionMul = exp2(VarAmounts.x * log2(saturate(dot(reflectionDirection, SunDir.xyz))));
 
-	r0.x = dot(cb12[12].xyzw, input.WorldPosition.xyzw);
-	r0.y = dot(cb12[13].xyzw, input.WorldPosition.xyzw);
-	r0.z = dot(cb12[15].xyzw, input.WorldPosition.xyzw);
-	r0.xy = r0.xy / r0.zz;
-	r1.x = dot(cb12[16].xyzw, input.PreviousWorldPosition.xyzw);
-	r1.y = dot(cb12[17].xyzw, input.PreviousWorldPosition.xyzw);
-	r0.z = dot(cb12[19].xyzw, input.PreviousWorldPosition.xyzw);
-	r0.zw = r1.xy / r0.zz;
-	r0.xy = r0.xy + -r0.zw;
-	psout.MotionVector = float2(-0.5, 0.5) * r0.xy;
+    float3 sunDirection = SunColor.xyz * SunDir.www;
+	float LdotN = saturate(dot(SunDir.xyz, finalNormal));
+	float sunMul = exp2(ShallowColor.w * log2(saturate(dot(finalNormal, float3(-0.099, -0.099, 0.99)))));
+	float3 sunColor = (sunDirection * refelectionMul.xxx) * DeepColor.www +
+	                  WaterParams.zzz * (sunMul.xxx * sunDirection);
+
+	float viewAngle = 1 - saturate(dot(-viewDirection, finalNormal));
+	float shallowFraction = (1 - FresnelRI.x) * pow(viewAngle, 5) + FresnelRI.x;
+	float diffuseFraction = distanceFraction * (shallowFraction * depthControl.x - 1) + 1;
+
+	float3 diffuseColor = lerp(ShallowColor.xyz, DeepColor.xyz, shallowFraction.xxx) * LdotN.xxx;
+	float3 specularColor = ReflectionColor.xyz * VarAmounts.yyy;
+    
+	float3 finalColorPreFog =
+		sunColor * depthControl.www + lerp(diffuseColor, specularColor, diffuseFraction.xxx);
+	float3 finalColor = lerp(finalColorPreFog, input.FogParam.xyz, input.FogParam.www);
+
+    psout.Lighting = saturate(float4(finalColor * PosAdjust.www, 0));
 #endif
 
-#if defined(LOD)
-    float4 r0, r1, r2, r3;
+#if defined(STENCIL)    
+    float3 normal =
+		normalize(cross(ddx_coarse(input.WorldPosition.xyz), ddy_coarse(input.WorldPosition.xyz)));
+	float3 viewDirection = normalize(input.WorldPosition.xyz);
 
-    float3 normals1;
-    normals1 = Normals01Tex.Sample(Normals01Sampler, input.TexCoord1.xy).xyz;
-    normals1 = normals1 * float3(2, 2, 2) + float3(-1, -1, -2);
+	float VdotN = dot(viewDirection, normal);
 
-    r0.xyz = float3(0, 0, 1);
-    r0.xyz += NormalsAmplitude.xxx * normals1;
-    r0.xyz = normalize(r0.xyz) - float3(0, 0, 1);
+    psout.Lighting = float4(0, 0, VdotN, 0);
 
-    r0.xyz = normalize(r0.xyz);
-    r1.xyz = normalize(input.WPosition.xyz);
+	float4 screenPosition = mul(ScreenProj, input.WorldPosition);
+	screenPosition.xy = screenPosition.xy / screenPosition.ww;
+	float4 previousScreenPosition = mul(PreviousScreenProj, input.PreviousWorldPosition);
+	previousScreenPosition.xy = previousScreenPosition.xy / previousScreenPosition.ww;
+	float2 screenMotionVector = float2(-0.5, 0.5) * (screenPosition.xy - previousScreenPosition.xy);
 
-    r0.w = dot(r1.xyz, r0.xyz) * 2;
-    r2.xyz = r0.xyz * -r0.www + r1.xyz;
-    r0.w = saturate(dot(-r1.xyz, r0.xyz));
-    r0.w = 1 - r0.w;
-
-    r1.x = saturate(dot(r2.xyz, SunDir.xyz));
-    r1.x = exp2(VarAmounts.x * log2(r1.x));
-
-    r1.yzw = SunColor.xyz * SunDir.www;
-    r2.xyz = r1.xxx * r1.yzw;
-    r1.x = saturate(dot(r0.xyz, float3(-99.0 / 1000.0, -99.0 / 1000.0, 99.0 / 100.0)));
-    r0.x = saturate(dot(SunDir.xyz, r0.xyz));
-    r0.y = exp2(ShallowColor.w * log2(r1.x));
-    r1.xyz = r0.yyy * r1.yzw;
-    r1.xyz = WaterParams.zzz * r1.xyz;
-    r1.xyz = r2.xyz * DeepColor.www + r1.xyz;
-
-    r0.y = r0.w * r0.w;
-    r0.y = r0.y * r0.y;
-    r0.y = r0.w * r0.y;
-    r0.z = 1 - FresnelRI.x;
-    r0.y = r0.z * r0.y + FresnelRI.x;
-
-    r2.xyz = DeepColor.xyz - ShallowColor.xyz;
-    r2.xyz = r0.yyy * r2.xyz + ShallowColor.xyz;
-
-    r0.y = r0.y - 1;
-    r0.xzw = r2.xyz * r0.xxx;
-    r1.w = input.WPosition.w - 8192;
-    r2.x = WaterParams.x - 8192;
-    r1.w = r1.w / r2.x;
-    r2.x = 1 - cb12[42].w;
-    r1.w = saturate(r1.w * r2.x + cb12[42].w);
-    r0.y = r1.w * r0.y + 1;
-
-    r2.xyz = ReflectionColor.xyz * VarAmounts.yyy + -r0.xzw;
-    r0.xyz = r0.yyy * r2.xyz + r0.xzw;
-    r0.xyz = r0.xyz + r1.xyz;
-    r1.xyz = input.FogParam.xyz + -r0.xyz;
-    r0.xyz = input.FogParam.www * r1.xyz + r0.xyz;
-
-    psout.Lighting = saturate(float4(r0.xyz * PosAdjust.www, 0));
+	psout.MotionVector = screenMotionVector;
 #endif
 
 	return psout;

@@ -7,6 +7,7 @@
 #include <RE/B/bhkCollisionObject.h>
 #include <RE/B/bhkRigidBody.h>
 #include <RE/B/BSFadeNode.h>
+#include <RE/B/BSFurnitureMarkerNode.h>
 #include <RE/B/BSLagBoneController.h>
 #include <RE/B/BSLightingShaderMaterialEnvmap.h>
 #include <RE/B/BSLightingShaderMaterialEye.h>
@@ -35,6 +36,7 @@
 
 #include <imgui.h>
 
+#include <numbers>
 #include <type_traits>
 
 namespace SIE
@@ -1191,6 +1193,39 @@ namespace SIE
 
 			return wasEdited;
 		}
+
+		static bool BSFurnitureMarkerNodeEditor(void* object, void* context)
+		{
+			auto& bsFurnitureMarkerNode = *static_cast<RE::BSFurnitureMarkerNode*>(object);
+
+			bool wasEdited = false;
+
+			size_t markerIndex = 0;
+			for (auto& marker : bsFurnitureMarkerNode.markers)
+			{
+				if (NiPoint3Editor(std::format("Offset##{}", markerIndex).c_str(), marker.offset))
+				{
+					wasEdited = true;
+				}
+				if (ImGui::SliderFloat(std::format("Heading##{}", markerIndex).c_str(),
+						&marker.heading, -std::numbers::pi, std::numbers::pi))
+				{
+					wasEdited = true;
+				}
+				if (EnumSelector(std::format("Animation Type##{}", markerIndex).c_str(),
+						marker.animationType))
+				{
+					wasEdited = true;
+				}
+				if (EnumSelector(std::format("Entry Type##{}", markerIndex).c_str(),
+						marker.entryProperties))
+				{
+					wasEdited = true;
+				}
+			}
+
+			return wasEdited;
+		}
 	}
 
 	bool DispatchableNiObjectEditor(const char* label, RE::NiObject& object)
@@ -1290,5 +1325,7 @@ namespace SIE
 			SNiObjectEditor::BSLagBoneControllerEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiSingleInterpController),
 			SNiObjectEditor::NiSingleInterpControllerEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSFurnitureMarkerNode),
+			SNiObjectEditor::BSFurnitureMarkerNodeEditor);
 	}
 }

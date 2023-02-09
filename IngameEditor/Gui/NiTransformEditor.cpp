@@ -8,6 +8,8 @@
 #include <RE/N/NiTransform.h>
 #include <RE/P/PlayerCamera.h>
 
+#include <numbers>
+
 namespace SIE
 {
 	namespace SNiTransformEditor
@@ -167,8 +169,8 @@ namespace SIE
 
 		if (PushingCollapsingHeader(label))
 		{
-			constexpr float rad2Deg = 180.f / 3.141592f;
-			constexpr float deg2Rad = 3.141592f / 180.f;
+			constexpr float rad2Deg = 180.f / std::numbers::pi;
+			constexpr float deg2Rad = std::numbers::pi / 180.f;
 
 			float model[4][4];
 			RE::NiPoint3 location = ref.data.location;
