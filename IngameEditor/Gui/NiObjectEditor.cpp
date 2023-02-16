@@ -35,6 +35,7 @@
 #include <RE/N/NiPSysMeshEmitter.h>
 #include <RE/N/NiPSysSphereEmitter.h>
 #include <RE/N/NiPSysSpawnModifier.h>
+#include <RE/N/NiRTTI.h>
 #include <RE/N/NiSkinInstance.h>
 #include <RE/N/NiSingleInterpController.h>
 #include <RE/N/NiStream.h>
@@ -64,10 +65,19 @@ namespace SIE
 		struct NiObjectContext
 		{
 			NiObjectContext(RE::NiObject& aRoot) 
-				: root(aRoot) 
-			{}
+				: root(aRoot)
+				, streamablesProvider(RE::NiStream::Create())
+			{ 
+				aRoot.RegisterStreamables(*streamablesProvider);
+			}
+
+			~NiObjectContext()
+			{ 
+				RE::free(streamablesProvider);
+			}
 
 			RE::NiObject& root;
+			RE::NiStream* streamablesProvider;
 		};
 
 		bool NiObjectTypeSelector(const char* label, const TypeDescriptor& base, const RTTI*& rtti)
@@ -105,32 +115,27 @@ namespace SIE
 			return wasSelected;
 		}
 
-		template<typename BaseType>
-		bool TargetSelector(const char* label, RE::NiObject& root, const TypeDescriptor& base,
-			BaseType*& target, const std::function<std::string_view(const BaseType*)>& nameProvider)
+		template <typename BaseType>
+		bool TargetSelector(const char* label, const NiObjectContext& context,
+			BaseType*& target, const std::function<std::string_view(const BaseType*)>& nameProvider) 
 		{
-			auto& rttiCache = RTTICache::Instance();
-
-			std::vector<BaseType*> possibleTargets;
-			rttiCache.Visit(&root,
-				[&](void* item)
-				{
-					const auto& rtti = rttiCache.GetRTTI(item);
-					if (std::find_if(rtti.bases.begin(), rtti.bases.end(),
-							[&](const auto& currentBase)
-							{ return currentBase.typeDescriptor == &base; }) != rtti.bases.end())
-					{
-						possibleTargets.push_back(reinterpret_cast<BaseType*>(item));
-					}
-				});
-
 			bool wasSelected = false;
 			if (ImGui::BeginCombo(label, target == nullptr ? "None" : nameProvider(target).data()))
 			{
+				std::vector<BaseType*> possibleTargets{ nullptr };
+				for (auto item : context.streamablesProvider->objects)
+				{
+					if (auto casted = netimmerse_cast<BaseType*>(item.get()))
+					{
+						possibleTargets.push_back(casted);
+					}
+				}
+
 				for (auto possibleTarget : possibleTargets)
 				{
 					const bool isSelected = possibleTarget == target;
-					if (ImGui::Selectable(nameProvider(possibleTarget).data(), isSelected))
+					if (ImGui::Selectable(possibleTarget == nullptr ? "None" : nameProvider(possibleTarget).data(),
+							isSelected))
 					{
 						target = possibleTarget;
 						wasSelected = true;
@@ -141,26 +146,49 @@ namespace SIE
 			return wasSelected;
 		}
 
-		bool NiAVObjectTargetSelector(const char* label, RE::NiObject& root, RE::NiAVObject*& target)
+		bool NiAVObjectTargetSelector(const char* label, const NiObjectContext& context,
+			RE::NiAVObject*& target)
 		{
 			static const auto typeDescriptor =
 				&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiAVObject);
 
-			return TargetSelector<RE::NiAVObject>(label, root, *typeDescriptor, target,
+			return TargetSelector<RE::NiAVObject>(label, context, target,
 				[](const RE::NiAVObject* avObject) {
 					return std::string_view(avObject->name.data());
 				});
 		}
 
-		bool NiNodeTargetSelector(const char* label, RE::NiObject& root,
+		bool NiNodeTargetSelector(const char* label, const NiObjectContext& context,
 			RE::NiNode*& target)
 		{
 			static const auto typeDescriptor =
 				&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiNode);
 
-			return TargetSelector<RE::NiNode>(label, root, *typeDescriptor, target,
+			return TargetSelector<RE::NiNode>(label, context, target,
 				[](const RE::NiNode* node)
 				{ return std::string_view(node->name.data()); });
+		}
+
+		bool NiParticleSystemTargetSelector(const char* label, const NiObjectContext& context,
+			RE::NiParticleSystem*& target)
+		{
+			static const auto typeDescriptor =
+				&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiParticleSystem);
+
+			return TargetSelector<RE::NiParticleSystem>(label, context, target,
+				[](const RE::NiParticleSystem* particleSystem)
+				{ return std::string_view(particleSystem->name.data()); });
+		}
+
+		bool NiPSysSpawnModifierTargetSelector(const char* label, const NiObjectContext& context,
+			RE::NiPSysSpawnModifier*& target)
+		{
+			static const auto typeDescriptor =
+				&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysSpawnModifier);
+
+			return TargetSelector<RE::NiPSysSpawnModifier>(label, context, target,
+				[](const RE::NiPSysSpawnModifier* spawnModifier)
+				{ return std::string_view(spawnModifier->name.data()); });
 		}
 
 		struct SaveData
@@ -1417,6 +1445,33 @@ namespace SIE
 			return wasEdited;
 		}
 
+		static bool NiPSysModifierEditor(void* object, void* context)
+		{
+			auto& modifier = *static_cast<RE::NiPSysModifier*>(object);
+
+			bool wasEdited = false;
+
+			if (BSFixedStringEdit("Name", modifier.name))
+			{
+				wasEdited = true;
+			}
+			if (NiParticleSystemTargetSelector("Target",
+					*reinterpret_cast<NiObjectContext*>(context), modifier.target))
+			{
+				wasEdited = true;
+			}
+			if (EnumSelector("Order", modifier.order))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::Checkbox("Active", &modifier.active))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
 		static bool NiPSysGravityModifierEditor(void* object, void* context)
 		{
 			auto& gravityModifier = *static_cast<RE::NiPSysGravityModifier*>(object);
@@ -1424,7 +1479,7 @@ namespace SIE
 			bool wasEdited = false;
 
 			if (NiAVObjectTargetSelector("Gravity Object",
-					reinterpret_cast<NiObjectContext*>(context)->root, gravityModifier.gravityObj))
+					*reinterpret_cast<NiObjectContext*>(context), gravityModifier.gravityObj))
 			{
 				wasEdited = true;
 			}
@@ -1517,7 +1572,7 @@ namespace SIE
 			bool wasEdited = false;
 
 			if (NiNodeTargetSelector("Emitter Object",
-					reinterpret_cast<NiObjectContext*>(context)->root, volumeEmitter.emitter))
+					*reinterpret_cast<NiObjectContext*>(context), volumeEmitter.emitter))
 			{
 				wasEdited = true;
 			}
@@ -1579,66 +1634,23 @@ namespace SIE
 			return wasEdited;
 		}
 
-		void NiObjectNETHierarchyVisitorAcceptor(void* object, const RTTI::HierarchyVisitor& visitor)
+		static bool NiPSysAgeDeathModifierEditor(void* object, void* context)
 		{
-			auto& objectNet = *static_cast<RE::NiObjectNET*>(object);
+			auto& ageDeathModifier = *static_cast<RE::NiPSysAgeDeathModifier*>(object);
 
-			auto& rttiCache = RTTICache::Instance();
+			bool wasEdited = false;
 
-			for (uint16_t extraIndex = 0; extraIndex < objectNet.extraDataSize; ++extraIndex)
+			if (ImGui::Checkbox("Spawn On Death", &ageDeathModifier.spawnOnDeath))
 			{
-				rttiCache.Visit(objectNet.extra[extraIndex], visitor);
+				wasEdited = true;
+			}
+			if (NiPSysSpawnModifierTargetSelector("Spawn Modifier",
+					*reinterpret_cast<NiObjectContext*>(context), ageDeathModifier.spawnModifier))
+			{
+				wasEdited = true;
 			}
 
-			if (auto controller = objectNet.controllers.get())
-			{
-				do 
-				{
-					rttiCache.Visit(controller, visitor);
-					controller = controller->next.get();
-				} while (controller != nullptr);
-			}
-		}
-
-		void NiAVObjectHierarchyVisitorAcceptor(void* object,
-			const RTTI::HierarchyVisitor& visitor)
-		{
-			auto& avObject = *static_cast<RE::NiAVObject*>(object);
-
-			if (avObject.collisionObject != nullptr)
-			{
-				auto& rttiCache = RTTICache::Instance();
-				rttiCache.Visit(avObject.collisionObject.get(), visitor);
-			}
-		}
-
-		void NiNodeHierarchyVisitorAcceptor(void* object, const RTTI::HierarchyVisitor& visitor)
-		{
-			auto& node = *static_cast<RE::NiNode*>(object);
-
-			auto& rttiCache = RTTICache::Instance();
-
-			for (auto& child : node.children)
-			{
-				if (child != nullptr)
-				{
-					rttiCache.Visit(child.get(), visitor);
-				}
-			}
-		}
-
-		void NiParticleSystemHierarchyVisitorAcceptor(void* object, const RTTI::HierarchyVisitor& visitor)
-		{
-			auto& particleSystem = *static_cast<RE::NiParticleSystem*>(object);
-
-			auto& rttiCache = RTTICache::Instance();
-
-			auto modifierItem = particleSystem.modifierList.head;
-			while (modifierItem != nullptr)
-			{
-				rttiCache.Visit(modifierItem->element.get(), visitor);
-				modifierItem = modifierItem->next;
-			}
+			return wasEdited;
 		}
 	}
 
@@ -1667,19 +1679,6 @@ namespace SIE
 	void RegisterNiEditors() 
 	{ 
 		auto& rttiCache = RTTICache::Instance();
-
-		rttiCache.RegisterHierarchyVisitorAcceptor(
-			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiObjectNET),
-			SNiObjectEditor::NiObjectNETHierarchyVisitorAcceptor);
-		rttiCache.RegisterHierarchyVisitorAcceptor(
-			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiAVObject),
-			SNiObjectEditor::NiAVObjectHierarchyVisitorAcceptor);
-		rttiCache.RegisterHierarchyVisitorAcceptor(
-			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiNode),
-			SNiObjectEditor::NiNodeHierarchyVisitorAcceptor);
-		rttiCache.RegisterHierarchyVisitorAcceptor(
-			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiParticleSystem),
-			SNiObjectEditor::NiParticleSystemHierarchyVisitorAcceptor);
 
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiObject),
 			SNiObjectEditor::NiObjectEditor);
@@ -1756,6 +1755,8 @@ namespace SIE
 			SNiObjectEditor::NiSingleInterpControllerEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSFurnitureMarkerNode),
 			SNiObjectEditor::BSFurnitureMarkerNodeEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysModifier),
+			SNiObjectEditor::NiPSysModifierEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysGravityModifier),
 			SNiObjectEditor::NiPSysGravityModifierEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysEmitter),
@@ -1768,5 +1769,7 @@ namespace SIE
 			SNiObjectEditor::NiPSysBoxEmitterEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysSphereEmitter),
 			SNiObjectEditor::NiPSysSphereEmitterEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysAgeDeathModifier),
+			SNiObjectEditor::NiPSysAgeDeathModifierEditor);
 	}
 }

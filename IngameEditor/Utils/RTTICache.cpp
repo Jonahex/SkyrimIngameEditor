@@ -134,13 +134,6 @@ namespace SIE
 		rtti.constructor = constructor;
 	}
 
-	void RTTICache::RegisterHierarchyVisitorAcceptor(const TypeDescriptor& typeDescriptor,
-		RTTI::HierarchyVisitorAcceptor acceptor)
-	{
-		auto& rtti = GetFromCache(typeDescriptor);
-		rtti.hierarchyVisitorAcceptor = acceptor;
-	}
-
 	const RTTI& RTTICache::GetRTTI(const void* object) 
 	{
 		const auto col = SRTTICache::GetCompleteObjectLocator(object);
@@ -239,30 +232,6 @@ namespace SIE
 			}
 		}
 		return result;
-	}
-
-	void RTTICache::Visit(void* object, const RTTI::HierarchyVisitor& visitor) 
-	{
-		visitor(object);
-
-		const auto col = SRTTICache::GetCompleteObjectLocator(object);
-		const auto& rtti = GetFromCache(*col);
-
-		bool finalResult = false;
-		for (const auto& base : rtti.bases)
-		{
-			auto subObject =
-				reinterpret_cast<void*>(reinterpret_cast<uint64_t>(object) + base.offset);
-			const auto& baseRtti = GetFromCache(*base.typeDescriptor);
-			if (baseRtti.hierarchyVisitorAcceptor != nullptr)
-			{
-				baseRtti.hierarchyVisitorAcceptor(subObject, visitor);
-			}
-		}
-		if (rtti.hierarchyVisitorAcceptor != nullptr)
-		{
-			rtti.hierarchyVisitorAcceptor(object, visitor);
-		}
 	}
 
 	void RegisterNiConstructors() 

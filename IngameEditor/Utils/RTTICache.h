@@ -13,8 +13,6 @@ namespace SIE
 	public:
 		using ObjectEditor = bool (*)(void*, void*);
 		using Constructor = void* (*)();
-		using HierarchyVisitor = std::function<void(void*)>;
-		using HierarchyVisitorAcceptor = void (*)(void*, const HierarchyVisitor&);
 
 		struct Base
 		{
@@ -28,7 +26,6 @@ namespace SIE
 		std::vector<Base> bases;
 		ObjectEditor objectEditor = nullptr;
 		Constructor constructor = nullptr;
-		HierarchyVisitorAcceptor hierarchyVisitorAcceptor = nullptr;
 
 		const TypeDescriptor* typeDescriptor = nullptr;
 
@@ -46,14 +43,11 @@ namespace SIE
 		void RegisterEditor(const TypeDescriptor& typeDescriptor, RTTI::ObjectEditor objectEditor);
 		void RegisterConstructor(const TypeDescriptor& typeDescriptor,
 			RTTI::Constructor constructor);
-		void RegisterHierarchyVisitorAcceptor(const TypeDescriptor& typeDescriptor,
-			RTTI::HierarchyVisitorAcceptor acceptor);
 
 		const RTTI& GetRTTI(const void* object);
 		const std::string& GetTypeName(const void* object);
 		bool BuildEditor(void* object, void* context = nullptr);
 		std::vector<const RTTI*> GetConstructibleDescendants(const TypeDescriptor& typeDescriptor);
-		void Visit(void* object, const RTTI::HierarchyVisitor& visitor);
 
 	private:
 		void CacheBases(int hierarchyDescriptorOffset, uintptr_t imageBase);
