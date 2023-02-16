@@ -29,10 +29,14 @@
 #include <RE/N/NiIntegerExtraData.h>
 #include <RE/N/NiParticleSystem.h>
 #include <RE/N/NiPSysAgeDeathModifier.h>
+#include <RE/N/NiPSysBombModifier.h>
+#include <RE/N/NiPSysBoundUpdateModifier.h>
 #include <RE/N/NiPSysBoxEmitter.h>
 #include <RE/N/NiPSysCylinderEmitter.h>
+#include <RE/N/NiPSysDragModifier.h>
 #include <RE/N/NiPSysGravityModifier.h>
 #include <RE/N/NiPSysMeshEmitter.h>
+#include <RE/N/NiPSysRotationModifier.h>
 #include <RE/N/NiPSysSphereEmitter.h>
 #include <RE/N/NiPSysSpawnModifier.h>
 #include <RE/N/NiRTTI.h>
@@ -146,49 +150,21 @@ namespace SIE
 			return wasSelected;
 		}
 
-		bool NiAVObjectTargetSelector(const char* label, const NiObjectContext& context,
-			RE::NiAVObject*& target)
+		template<typename T>
+		bool NiObjectNETTargetSelector(const char* label, const NiObjectContext& context,
+			T*& target)
 		{
-			static const auto typeDescriptor =
-				&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiAVObject);
-
-			return TargetSelector<RE::NiAVObject>(label, context, target,
-				[](const RE::NiAVObject* avObject) {
-					return std::string_view(avObject->name.data());
+			return TargetSelector<T>(label, context, target,
+				[](const T* objectNet) { return std::string_view(objectNet->name.data());
 				});
 		}
 
-		bool NiNodeTargetSelector(const char* label, const NiObjectContext& context,
-			RE::NiNode*& target)
+		template <typename T>
+		bool NiPSysModifierTargetSelector(const char* label, const NiObjectContext& context,
+			T*& target)
 		{
-			static const auto typeDescriptor =
-				&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiNode);
-
-			return TargetSelector<RE::NiNode>(label, context, target,
-				[](const RE::NiNode* node)
-				{ return std::string_view(node->name.data()); });
-		}
-
-		bool NiParticleSystemTargetSelector(const char* label, const NiObjectContext& context,
-			RE::NiParticleSystem*& target)
-		{
-			static const auto typeDescriptor =
-				&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiParticleSystem);
-
-			return TargetSelector<RE::NiParticleSystem>(label, context, target,
-				[](const RE::NiParticleSystem* particleSystem)
-				{ return std::string_view(particleSystem->name.data()); });
-		}
-
-		bool NiPSysSpawnModifierTargetSelector(const char* label, const NiObjectContext& context,
-			RE::NiPSysSpawnModifier*& target)
-		{
-			static const auto typeDescriptor =
-				&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysSpawnModifier);
-
-			return TargetSelector<RE::NiPSysSpawnModifier>(label, context, target,
-				[](const RE::NiPSysSpawnModifier* spawnModifier)
-				{ return std::string_view(spawnModifier->name.data()); });
+			return TargetSelector<T>(label, context, target,
+				[](const T* modifier) { return std::string_view(modifier->name.data()); });
 		}
 
 		struct SaveData
@@ -1455,10 +1431,14 @@ namespace SIE
 			{
 				wasEdited = true;
 			}
-			if (NiParticleSystemTargetSelector("Target",
-					*reinterpret_cast<NiObjectContext*>(context), modifier.target))
 			{
-				wasEdited = true;
+				auto target = modifier.target;
+				if (NiObjectNETTargetSelector<RE::NiParticleSystem>("Target",
+						*reinterpret_cast<NiObjectContext*>(context), target))
+				{
+					modifier.SetSystemPointer(target);
+					wasEdited = true;
+				}
 			}
 			if (EnumSelector("Order", modifier.order))
 			{
@@ -1478,7 +1458,7 @@ namespace SIE
 
 			bool wasEdited = false;
 
-			if (NiAVObjectTargetSelector("Gravity Object",
+			if (NiObjectNETTargetSelector<RE::NiAVObject>("Gravity Object",
 					*reinterpret_cast<NiObjectContext*>(context), gravityModifier.gravityObj))
 			{
 				wasEdited = true;
@@ -1571,7 +1551,7 @@ namespace SIE
 
 			bool wasEdited = false;
 
-			if (NiNodeTargetSelector("Emitter Object",
+			if (NiObjectNETTargetSelector<RE::NiNode>("Emitter Object",
 					*reinterpret_cast<NiObjectContext*>(context), volumeEmitter.emitter))
 			{
 				wasEdited = true;
@@ -1644,10 +1624,212 @@ namespace SIE
 			{
 				wasEdited = true;
 			}
-			if (NiPSysSpawnModifierTargetSelector("Spawn Modifier",
+			if (NiPSysModifierTargetSelector<RE::NiPSysSpawnModifier>("Spawn Modifier",
 					*reinterpret_cast<NiObjectContext*>(context), ageDeathModifier.spawnModifier))
 			{
 				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysSpawnModifierEditor(void* object, void* context)
+		{
+			auto& spawnModifier = *static_cast<RE::NiPSysSpawnModifier*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragScalar("Spawn Generations", ImGuiDataType_U16, &spawnModifier.numSpawnGenerations))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::SliderFloat("Spawn Probability", &spawnModifier.spawnProbability, 0.f, 1.f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragScalarN("Spawn Number Range", ImGuiDataType_U16,
+					&spawnModifier.minNumToSpawn, 2))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Spawn Speed Variation", &spawnModifier.spawnSpeedVariation, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Spawn Direction Variation", &spawnModifier.spawnDirVariation, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Life Span", &spawnModifier.lifeSpan,
+					0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Life Span Variation", &spawnModifier.lifeSpanVariation,
+					0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysMeshEmitterEditor(void* object, void* context)
+		{
+			auto& meshEmitter = *static_cast<RE::NiPSysMeshEmitter*>(object);
+
+			bool wasEdited = false;
+
+			{
+				size_t emitterMeshIndex = 0;
+				for (auto& emitterMesh : meshEmitter.emitterMeshes)
+				{
+					auto emitterMeshPtr = emitterMesh.get();
+					if (NiObjectNETTargetSelector<RE::BSTriShape>(std::format("Emitter Mesh##{}", emitterMeshIndex).c_str(),
+							*reinterpret_cast<NiObjectContext*>(context), emitterMeshPtr))
+					{
+						emitterMesh = RE::NiPointer(emitterMeshPtr);
+						wasEdited = true;
+					}
+					++emitterMeshIndex;
+				}
+			}
+
+			if (EnumSelector("Velocity Type", meshEmitter.initialVelocityType))
+			{
+				wasEdited = true;
+			}
+			if (EnumSelector("Emission Type", meshEmitter.emissionType))
+			{
+				wasEdited = true;
+			}
+			if (NiPoint3Editor("Emission Axis", meshEmitter.emissionAxis, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysBombModifierEditor(void* object, void* context)
+		{
+			auto& bombModifier = *static_cast<RE::NiPSysBombModifier*>(object);
+
+			bool wasEdited = false;
+
+			if (NiObjectNETTargetSelector<RE::NiNode>("Bomb Object",
+					*reinterpret_cast<NiObjectContext*>(context), bombModifier.bombObject))
+			{
+				wasEdited = true;
+			}
+			if (NiPoint3Editor("Bomb Axis", bombModifier.bombAxis, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Decay", &bombModifier.decay, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Acceleration", &bombModifier.acceleration, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (EnumSelector("Decay Type", bombModifier.decayType))
+			{
+				wasEdited = true;
+			}
+			if (EnumSelector("Symmetry Type", bombModifier.symmetryType))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysDragModifierEditor(void* object, void* context)
+		{
+			auto& dragModifier = *static_cast<RE::NiPSysDragModifier*>(object);
+
+			bool wasEdited = false;
+
+			if (NiObjectNETTargetSelector<RE::NiAVObject>("Drag Object",
+					*reinterpret_cast<NiObjectContext*>(context), dragModifier.dragObject))
+			{
+				wasEdited = true;
+			}
+			if (NiPoint3Editor("Drag Axis", dragModifier.dragAxis, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::SliderFloat("Percentage", &dragModifier.percentage, 0.f, 1.f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Range", &dragModifier.range, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Range Falloff", &dragModifier.rangeFalloff, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysRotationModifierEditor(void* object, void* context)
+		{
+			auto& rotationModifier = *static_cast<RE::NiPSysRotationModifier*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat("Angular Speed", &rotationModifier.rotationSpeed, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Angular Speed Variation",
+					&rotationModifier.rotationSpeedVariation, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Initial Angle", &rotationModifier.rotationAngle, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Initial Angle Variation",
+					&rotationModifier.rotationAngleVariation, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (NiPoint3Editor("Rotation Axis", rotationModifier.rotationAxis, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::Checkbox("Random Rotation Axis", &rotationModifier.randomRotationAxis))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::Checkbox("Random Angular Speed Sign", &rotationModifier.randomRotationSpeedSign))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysBoundUpdateModifierEditor(void* object, void* context)
+		{
+			auto& boundUpdateModifier = *static_cast<RE::NiPSysBoundUpdateModifier*>(object);
+
+			bool wasEdited = false;
+
+			{
+				auto updateSkip = boundUpdateModifier.updateSkip;
+				if (ImGui::DragScalar("Update Skip", ImGuiDataType_U16, &updateSkip))
+				{
+					boundUpdateModifier.SetUpdateSkip(updateSkip);
+					wasEdited = true;
+				}
 			}
 
 			return wasEdited;
@@ -1771,5 +1953,17 @@ namespace SIE
 			SNiObjectEditor::NiPSysSphereEmitterEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysAgeDeathModifier),
 			SNiObjectEditor::NiPSysAgeDeathModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysSpawnModifier),
+			SNiObjectEditor::NiPSysSpawnModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysMeshEmitter),
+			SNiObjectEditor::NiPSysMeshEmitterEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysBombModifier),
+			SNiObjectEditor::NiPSysBombModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysDragModifier),
+			SNiObjectEditor::NiPSysDragModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysRotationModifier),
+			SNiObjectEditor::NiPSysRotationModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysBoundUpdateModifier),
+			SNiObjectEditor::NiPSysBoundUpdateModifierEditor);
 	}
 }
