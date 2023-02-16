@@ -28,11 +28,18 @@
 #include <RE/N/NiControllerSequence.h>
 #include <RE/N/NiIntegerExtraData.h>
 #include <RE/N/NiParticleSystem.h>
-#include <RE/N/NiPSysModifier.h>
+#include <RE/N/NiPSysAgeDeathModifier.h>
+#include <RE/N/NiPSysBoxEmitter.h>
+#include <RE/N/NiPSysCylinderEmitter.h>
+#include <RE/N/NiPSysGravityModifier.h>
+#include <RE/N/NiPSysMeshEmitter.h>
+#include <RE/N/NiPSysSphereEmitter.h>
+#include <RE/N/NiPSysSpawnModifier.h>
 #include <RE/N/NiSkinInstance.h>
 #include <RE/N/NiSingleInterpController.h>
 #include <RE/N/NiStream.h>
 #include <RE/N/NiStringExtraData.h>
+#include <RE/N/NiTStringMap.h>
 
 #include <imgui.h>
 
@@ -54,6 +61,108 @@ namespace SIE
 
 	namespace SNiObjectEditor
 	{
+		struct NiObjectContext
+		{
+			NiObjectContext(RE::NiObject& aRoot) 
+				: root(aRoot) 
+			{}
+
+			RE::NiObject& root;
+		};
+
+		bool NiObjectTypeSelector(const char* label, const TypeDescriptor& base, const RTTI*& rtti)
+		{
+			static std::unordered_map<const TypeDescriptor*, std::vector<const RTTI*>> descendantsCache;
+
+			auto descendantsIt = descendantsCache.find(&base);
+			if (descendantsIt == descendantsCache.cend())
+			{
+				auto descendants = RTTICache::Instance().GetConstructibleDescendants(base);
+				std::sort(descendants.begin(), descendants.end(),
+					[](auto first, auto second)
+					{
+						return std::lexicographical_compare(first->typeName.begin(),
+							first->typeName.end(), second->typeName.begin(),
+							second->typeName.end());
+					});
+				descendantsIt = descendantsCache.insert_or_assign(&base, std::move(descendants)).first;
+			}
+
+			bool wasSelected = false;
+			if (ImGui::BeginCombo(label, rtti == nullptr ? "None" : rtti->typeName.c_str()))
+			{
+				for (const auto& descendantRtti : descendantsIt->second)
+				{
+					const bool isSelected = descendantRtti == rtti;
+					if (ImGui::Selectable(descendantRtti->typeName.c_str(), isSelected))
+					{
+						rtti = descendantRtti;
+						wasSelected = true;
+					}
+				}
+				ImGui::EndCombo();
+			}
+			return wasSelected;
+		}
+
+		template<typename BaseType>
+		bool TargetSelector(const char* label, RE::NiObject& root, const TypeDescriptor& base,
+			BaseType*& target, const std::function<std::string_view(const BaseType*)>& nameProvider)
+		{
+			auto& rttiCache = RTTICache::Instance();
+
+			std::vector<BaseType*> possibleTargets;
+			rttiCache.Visit(&root,
+				[&](void* item)
+				{
+					const auto& rtti = rttiCache.GetRTTI(item);
+					if (std::find_if(rtti.bases.begin(), rtti.bases.end(),
+							[&](const auto& currentBase)
+							{ return currentBase.typeDescriptor == &base; }) != rtti.bases.end())
+					{
+						possibleTargets.push_back(reinterpret_cast<BaseType*>(item));
+					}
+				});
+
+			bool wasSelected = false;
+			if (ImGui::BeginCombo(label, target == nullptr ? "None" : nameProvider(target).data()))
+			{
+				for (auto possibleTarget : possibleTargets)
+				{
+					const bool isSelected = possibleTarget == target;
+					if (ImGui::Selectable(nameProvider(possibleTarget).data(), isSelected))
+					{
+						target = possibleTarget;
+						wasSelected = true;
+					}
+				}
+				ImGui::EndCombo();
+			}
+			return wasSelected;
+		}
+
+		bool NiAVObjectTargetSelector(const char* label, RE::NiObject& root, RE::NiAVObject*& target)
+		{
+			static const auto typeDescriptor =
+				&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiAVObject);
+
+			return TargetSelector<RE::NiAVObject>(label, root, *typeDescriptor, target,
+				[](const RE::NiAVObject* avObject) {
+					return std::string_view(avObject->name.data());
+				});
+		}
+
+		bool NiNodeTargetSelector(const char* label, RE::NiObject& root,
+			RE::NiNode*& target)
+		{
+			static const auto typeDescriptor =
+				&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiNode);
+
+			return TargetSelector<RE::NiNode>(label, root, *typeDescriptor, target,
+				[](const RE::NiNode* node)
+				{ return std::string_view(node->name.data()); });
+		}
+
 		struct SaveData
 		{
 			std::optional<RE::NiTransform> topTransform;
@@ -154,7 +263,7 @@ namespace SIE
 				const std::string& typeName = rttiCache.GetTypeName(collisionObject.body.get());
 				if (PushingCollapsingHeader(std::format("[Body] <{}>", typeName).c_str()))
 				{
-					if (rttiCache.BuildEditor(collisionObject.body.get()))
+					if (rttiCache.BuildEditor(collisionObject.body.get(), context))
 					{
 						wasEdited = true;
 					}
@@ -213,7 +322,7 @@ namespace SIE
 						const std::string& typeName = rttiCache.GetTypeName(shape->userData);
 						if (PushingCollapsingHeader(std::format("[Shape] <{}>", typeName).c_str()))
 						{
-							if (rttiCache.BuildEditor(shape->userData))
+							if (rttiCache.BuildEditor(shape->userData, context))
 							{
 								wasEdited = true;
 							}
@@ -235,7 +344,7 @@ namespace SIE
 						if (PushingCollapsingHeader(std::format("[Constraint] <{}>##{}", typeName, constraintIndex)
 														.c_str()))
 						{
-							if (rttiCache.BuildEditor(constraint.get()))
+							if (rttiCache.BuildEditor(constraint.get(), context))
 							{
 								wasEdited = true;
 							}
@@ -299,11 +408,12 @@ namespace SIE
 			return wasEdited;
 		}
 
-		struct BSShaderTextureSetEditorContext
+		struct BSShaderTextureSetEditorContext : public NiObjectContext
 		{
-			BSShaderTextureSetEditorContext(const RE::BSLightingShaderProperty& aProperty,
+			BSShaderTextureSetEditorContext(RE::NiObject& aRoot, const RE::BSLightingShaderProperty& aProperty,
 				const RE::BSLightingShaderMaterialBase& aMaterial) 
-				: property(aProperty)
+				: NiObjectContext(aRoot)
+				, property(aProperty)
 				, material(aMaterial)
 			{}
 
@@ -407,6 +517,11 @@ namespace SIE
 
 			bool wasEdited = false;
 
+			if (BSFixedStringEdit("Name", objectNet.name))
+			{
+				wasEdited = true;
+			}
+
 			if (objectNet.extraDataSize > 0)
 			{
 				for (uint16_t extraIndex = 0; extraIndex < objectNet.extraDataSize; ++extraIndex)
@@ -418,11 +533,37 @@ namespace SIE
 							objectNet.extra[extraIndex]->name.c_str(), extraIndex)
 													.c_str()))
 					{
-						if (rttiCache.BuildEditor(objectNet.extra[extraIndex]))
+						if (ImGui::Button("Remove"))
+						{
+							objectNet.RemoveExtraDataAt(extraIndex);
+							break;
+						}
+						if (rttiCache.BuildEditor(objectNet.extra[extraIndex], context))
 						{
 							wasEdited = true;
 						}
 						ImGui::TreePop();
+					}
+				}
+			}
+
+			{
+				static const auto extraDataTypeDescriptor =
+					&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiExtraData);
+				static const RTTI* newExtraDataRtti = nullptr;
+
+				NiObjectTypeSelector("##NewExtraData", *extraDataTypeDescriptor, newExtraDataRtti);
+				ImGui::SameLine();
+				if (ImGui::Button("Add Extra Data"))
+				{
+					if (newExtraDataRtti != nullptr)
+					{
+						auto newExtraData =
+							static_cast<RE::NiExtraData*>(newExtraDataRtti->constructor());
+						if (newExtraData != nullptr)
+						{
+							objectNet.AddExtraData(newExtraData);
+						}
 					}
 				}
 			}
@@ -435,7 +576,7 @@ namespace SIE
 					const std::string& typeName = rttiCache.GetTypeName(controller);
 					if (PushingCollapsingHeader(std::format("[Contoller] <{}>", typeName).c_str()))
 					{
-						if (rttiCache.BuildEditor(controller))
+						if (rttiCache.BuildEditor(controller, context))
 						{
 							wasEdited = true;
 						}
@@ -460,7 +601,7 @@ namespace SIE
 				const std::string& typeName = rttiCache.GetTypeName(avObject.collisionObject.get());
 				if (PushingCollapsingHeader(std::format("[Collision] <{}>", typeName).c_str()))
 				{
-					if (rttiCache.BuildEditor(avObject.collisionObject.get()))
+					if (rttiCache.BuildEditor(avObject.collisionObject.get(), context))
 					{
 						wasEdited = true;
 					}
@@ -521,13 +662,39 @@ namespace SIE
 								std::format("[Child] <{}> {}##{}", typeName, child->name.c_str(), childIndex)
 									.c_str()))
 						{
-							if (rttiCache.BuildEditor(child.get()))
+							if (ImGui::Button("Remove"))
+							{
+								node.DetachChild(child.get());
+								wasEdited = true;
+								break;
+							}
+							if (rttiCache.BuildEditor(child.get(), context))
 							{
 								wasEdited = true;
 							}
 							ImGui::TreePop();
 						}
 						++childIndex;
+					}
+				}
+			}
+
+			{
+				static const auto childTypeDescriptor =
+					&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiAVObject);
+				static const RTTI* newNodeRtti = nullptr;
+
+				NiObjectTypeSelector("##NewChild", *childTypeDescriptor, newNodeRtti);
+				ImGui::SameLine();
+				if (ImGui::Button("Add Child"))
+				{
+					if (newNodeRtti != nullptr)
+					{
+						auto newChild = static_cast<RE::NiAVObject*>(newNodeRtti->constructor());
+						if (newChild != nullptr)
+						{
+							node.AttachChild(newChild);
+						}
 					}
 				}
 			}
@@ -563,7 +730,7 @@ namespace SIE
 					if (PushingCollapsingHeader(
 							std::format("[Property] <{}>##{}", typeName, propertyIndex).c_str()))
 					{
-						if (rttiCache.BuildEditor(property.get()))
+						if (rttiCache.BuildEditor(property.get(), context))
 						{
 							wasEdited = true;
 						}
@@ -578,7 +745,7 @@ namespace SIE
 				const std::string& typeName = rttiCache.GetTypeName(geometry.skinInstance.get());
 				if (PushingCollapsingHeader(std::format("[Skin] <{}>", typeName).c_str()))
 				{
-					if (rttiCache.BuildEditor(geometry.skinInstance.get()))
+					if (rttiCache.BuildEditor(geometry.skinInstance.get(), context))
 					{
 						wasEdited = true;
 					}
@@ -619,10 +786,11 @@ namespace SIE
 			return wasEdited;
 		}
 
-		struct BSShaderMaterialEditorContext
+		struct BSShaderMaterialEditorContext : public NiObjectContext
 		{
-			BSShaderMaterialEditorContext(const RE::BSShaderProperty& aProperty) :
-				property(aProperty)
+			BSShaderMaterialEditorContext(RE::NiObject& aRoot, const RE::BSShaderProperty& aProperty) 
+				: NiObjectContext(aRoot)
+				, property(aProperty)
 			{}
 
 			const RE::BSShaderProperty& property;
@@ -645,7 +813,7 @@ namespace SIE
 					rttiCache.GetTypeName(material.textureSet.get()))
 											.c_str()))
 			{
-				BSShaderTextureSetEditorContext textureSetContext{ static_cast<const RE::BSLightingShaderProperty&>(context.property), material };
+				BSShaderTextureSetEditorContext textureSetContext{ reinterpret_cast<NiObjectContext*>(contextPtr)->root, static_cast<const RE::BSLightingShaderProperty&>(context.property), material };
 				if (rttiCache.BuildEditor(material.textureSet.get(), &textureSetContext))
 				{
 					material.diffuseTexture = nullptr;
@@ -830,7 +998,7 @@ namespace SIE
 
 		static bool BSShaderPropertyEditor(void* object, void* context)
 		{
-			auto& bsShaderProperty = *static_cast<RE::BSShaderProperty*>(object);
+			auto& shaderProperty = *static_cast<RE::BSShaderProperty*>(object);
 
 			bool wasEdited = false;
 
@@ -839,7 +1007,7 @@ namespace SIE
 				for (const auto& [value, name] :
 					magic_enum::enum_entries<RE::BSShaderProperty::EShaderPropertyFlag>())
 				{
-					if (FlagEdit(name.data(), bsShaderProperty.flags, value))
+					if (FlagEdit(name.data(), shaderProperty.flags, value))
 					{
 						wasEdited = true;
 					}
@@ -847,14 +1015,15 @@ namespace SIE
 				ImGui::TreePop();
 			}
 
-			if (bsShaderProperty.material != nullptr)
+			if (shaderProperty.material != nullptr)
 			{
 				auto& rttiCache = RTTICache::Instance();
-				const std::string& typeName = rttiCache.GetTypeName(bsShaderProperty.material);
+				const std::string& typeName = rttiCache.GetTypeName(shaderProperty.material);
 				if (PushingCollapsingHeader(std::format("[Material] <{}>", typeName).c_str()))
 				{
-					BSShaderMaterialEditorContext materialContext(bsShaderProperty);
-					if (rttiCache.BuildEditor(bsShaderProperty.material, &materialContext))
+					BSShaderMaterialEditorContext materialContext(
+						reinterpret_cast<NiObjectContext*>(context)->root, shaderProperty);
+					if (rttiCache.BuildEditor(shaderProperty.material, &materialContext))
 					{
 						wasEdited = true;
 					}
@@ -867,20 +1036,20 @@ namespace SIE
 
 		static bool BSLightingShaderPropertyEditor(void* object, void* context)
 		{
-			auto& bsLightingShaderProperty = *static_cast<RE::BSLightingShaderProperty*>(object);
+			auto& lightingShaderProperty = *static_cast<RE::BSLightingShaderProperty*>(object);
 
 			bool wasEdited = false;
 
-			if (bsLightingShaderProperty.emissiveColor != nullptr)
+			if (lightingShaderProperty.emissiveColor != nullptr)
 			{
 				if (ImGui::ColorEdit3("Emissive Color",
-						&bsLightingShaderProperty.emissiveColor->red))
+						&lightingShaderProperty.emissiveColor->red))
 				{
 					wasEdited = true;
 				}
 			}
 
-			if (ImGui::DragFloat("Emissive Multiplier", &bsLightingShaderProperty.emissiveMult, 0.01f, 0.f))
+			if (ImGui::DragFloat("Emissive Multiplier", &lightingShaderProperty.emissiveMult, 0.01f, 0.f))
 			{
 				wasEdited = true;
 			}
@@ -976,7 +1145,7 @@ namespace SIE
 				if (PushingCollapsingHeader(
 						std::format("[Particles Data] <{}>", typeName).c_str()))
 				{
-					if (rttiCache.BuildEditor(particles.particleData.get()))
+					if (rttiCache.BuildEditor(particles.particleData.get(), context))
 					{
 						wasEdited = true;
 					}
@@ -1013,7 +1182,7 @@ namespace SIE
 								modifierItem->element->name.c_str(), modifierIndex)
 														.c_str()))
 						{
-							if (rttiCache.BuildEditor(modifierItem->element.get()))
+							if (rttiCache.BuildEditor(modifierItem->element.get(), context))
 							{
 								wasEdited = true;
 							}
@@ -1021,6 +1190,27 @@ namespace SIE
 						}
 					}
 					modifierItem = modifierItem->next;
+				}
+			}
+
+			{
+				static const auto modifierTypeDescriptor =
+					&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysModifier);
+				static const RTTI* newModifierRtti = nullptr;
+
+				NiObjectTypeSelector("##NewModifier", *modifierTypeDescriptor, newModifierRtti);
+				ImGui::SameLine();
+				if (ImGui::Button("Add Modifier"))
+				{
+					if (newModifierRtti != nullptr)
+					{
+						auto newModifier =
+							static_cast<RE::NiPSysModifier*>(newModifierRtti->constructor());
+						if (newModifier != nullptr)
+						{
+							particleSystem.AddModifier(newModifier);
+						}
+					}
 				}
 			}
 
@@ -1120,7 +1310,7 @@ namespace SIE
 								typeName, controllerSequence->name.c_str(), sequenceIndex)
 														.c_str()))
 						{
-							if (rttiCache.BuildEditor(controllerSequence.get()))
+							if (rttiCache.BuildEditor(controllerSequence.get(), context))
 							{
 								wasEdited = true;
 							}
@@ -1136,7 +1326,7 @@ namespace SIE
 					rttiCache.GetTypeName(controllerManager.objectPalette.get());
 				if (PushingCollapsingHeader(std::format("[Object Palette] <{}>", typeName).c_str()))
 				{
-					if (rttiCache.BuildEditor(controllerManager.objectPalette.get()))
+					if (rttiCache.BuildEditor(controllerManager.objectPalette.get(), context))
 					{
 						wasEdited = true;
 					}
@@ -1183,7 +1373,7 @@ namespace SIE
 					rttiCache.GetTypeName(singleInterpController.interpolator.get());
 				if (PushingCollapsingHeader(std::format("[Interpolator] <{}>", typeName).c_str()))
 				{
-					if (rttiCache.BuildEditor(singleInterpController.interpolator.get()))
+					if (rttiCache.BuildEditor(singleInterpController.interpolator.get(), context))
 					{
 						wasEdited = true;
 					}
@@ -1196,12 +1386,12 @@ namespace SIE
 
 		static bool BSFurnitureMarkerNodeEditor(void* object, void* context)
 		{
-			auto& bsFurnitureMarkerNode = *static_cast<RE::BSFurnitureMarkerNode*>(object);
+			auto& furnitureMarkerNode = *static_cast<RE::BSFurnitureMarkerNode*>(object);
 
 			bool wasEdited = false;
 
 			size_t markerIndex = 0;
-			for (auto& marker : bsFurnitureMarkerNode.markers)
+			for (auto& marker : furnitureMarkerNode.markers)
 			{
 				if (NiPoint3Editor(std::format("Offset##{}", markerIndex).c_str(), marker.offset))
 				{
@@ -1226,6 +1416,230 @@ namespace SIE
 
 			return wasEdited;
 		}
+
+		static bool NiPSysGravityModifierEditor(void* object, void* context)
+		{
+			auto& gravityModifier = *static_cast<RE::NiPSysGravityModifier*>(object);
+
+			bool wasEdited = false;
+
+			if (NiAVObjectTargetSelector("Gravity Object",
+					reinterpret_cast<NiObjectContext*>(context)->root, gravityModifier.gravityObj))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Decay", &gravityModifier.decay, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Strength", &gravityModifier.strength, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (EnumSelector("Force Type", gravityModifier.forceType))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Turbulence", &gravityModifier.turbulence, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Scale", &gravityModifier.scale, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::Checkbox("World Aligned", &gravityModifier.worldAligned))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysEmitterEditor(void* object, void* context)
+		{
+			auto& emitter = *static_cast<RE::NiPSysEmitter*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat("Speed", &emitter.speed, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Speed Variation", &emitter.speedVariation, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Declination", &emitter.declination, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Declination Variation", &emitter.declinationVariation, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Planar Angle", &emitter.planarAngle, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Planar Angle Variation", &emitter.planarAngleVariation, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::ColorEdit4("Initial Color", &emitter.initialColor.red))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Initial Radius", &emitter.initialRadius, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Radius Variation", &emitter.radiusVariation, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Life Span", &emitter.lifeSpan, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Life Span Variation", &emitter.lifeSpanVariation, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysVolumeEmitterEditor(void* object, void* context)
+		{
+			auto& volumeEmitter = *static_cast<RE::NiPSysVolumeEmitter*>(object);
+
+			bool wasEdited = false;
+
+			if (NiNodeTargetSelector("Emitter Object",
+					reinterpret_cast<NiObjectContext*>(context)->root, volumeEmitter.emitter))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysCylinderEmitterEditor(void* object, void* context)
+		{
+			auto& cylinderEmitter = *static_cast<RE::NiPSysCylinderEmitter*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat("Radius", &cylinderEmitter.radius, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Height", &cylinderEmitter.height, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysBoxEmitterEditor(void* object, void* context)
+		{
+			auto& boxEmitter = *static_cast<RE::NiPSysBoxEmitter*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat("Width", &boxEmitter.width, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Height", &boxEmitter.height, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Depth", &boxEmitter.depth, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysSphereEmitterEditor(void* object, void* context)
+		{
+			auto& sphereEmitter = *static_cast<RE::NiPSysSphereEmitter*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat("Radius", &sphereEmitter.radius, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		void NiObjectNETHierarchyVisitorAcceptor(void* object, const RTTI::HierarchyVisitor& visitor)
+		{
+			auto& objectNet = *static_cast<RE::NiObjectNET*>(object);
+
+			auto& rttiCache = RTTICache::Instance();
+
+			for (uint16_t extraIndex = 0; extraIndex < objectNet.extraDataSize; ++extraIndex)
+			{
+				rttiCache.Visit(objectNet.extra[extraIndex], visitor);
+			}
+
+			if (auto controller = objectNet.controllers.get())
+			{
+				do 
+				{
+					rttiCache.Visit(controller, visitor);
+					controller = controller->next.get();
+				} while (controller != nullptr);
+			}
+		}
+
+		void NiAVObjectHierarchyVisitorAcceptor(void* object,
+			const RTTI::HierarchyVisitor& visitor)
+		{
+			auto& avObject = *static_cast<RE::NiAVObject*>(object);
+
+			if (avObject.collisionObject != nullptr)
+			{
+				auto& rttiCache = RTTICache::Instance();
+				rttiCache.Visit(avObject.collisionObject.get(), visitor);
+			}
+		}
+
+		void NiNodeHierarchyVisitorAcceptor(void* object, const RTTI::HierarchyVisitor& visitor)
+		{
+			auto& node = *static_cast<RE::NiNode*>(object);
+
+			auto& rttiCache = RTTICache::Instance();
+
+			for (auto& child : node.children)
+			{
+				if (child != nullptr)
+				{
+					rttiCache.Visit(child.get(), visitor);
+				}
+			}
+		}
+
+		void NiParticleSystemHierarchyVisitorAcceptor(void* object, const RTTI::HierarchyVisitor& visitor)
+		{
+			auto& particleSystem = *static_cast<RE::NiParticleSystem*>(object);
+
+			auto& rttiCache = RTTICache::Instance();
+
+			auto modifierItem = particleSystem.modifierList.head;
+			while (modifierItem != nullptr)
+			{
+				rttiCache.Visit(modifierItem->element.get(), visitor);
+				modifierItem = modifierItem->next;
+			}
+		}
 	}
 
 	bool DispatchableNiObjectEditor(const char* label, RE::NiObject& object)
@@ -1240,7 +1654,8 @@ namespace SIE
 		const std::string name = GetFullName(object);
 		if (PushingCollapsingHeader(name.c_str()))
 		{
-			wasEdited = rttiCache.BuildEditor(&object);
+			NiObjectContext rootContext(object);
+			wasEdited = rttiCache.BuildEditor(&object, &rootContext);
 			ImGui::TreePop();
 		}
 
@@ -1252,6 +1667,20 @@ namespace SIE
 	void RegisterNiEditors() 
 	{ 
 		auto& rttiCache = RTTICache::Instance();
+
+		rttiCache.RegisterHierarchyVisitorAcceptor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiObjectNET),
+			SNiObjectEditor::NiObjectNETHierarchyVisitorAcceptor);
+		rttiCache.RegisterHierarchyVisitorAcceptor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiAVObject),
+			SNiObjectEditor::NiAVObjectHierarchyVisitorAcceptor);
+		rttiCache.RegisterHierarchyVisitorAcceptor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiNode),
+			SNiObjectEditor::NiNodeHierarchyVisitorAcceptor);
+		rttiCache.RegisterHierarchyVisitorAcceptor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiParticleSystem),
+			SNiObjectEditor::NiParticleSystemHierarchyVisitorAcceptor);
+
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiObject),
 			SNiObjectEditor::NiObjectEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiObjectNET),
@@ -1327,5 +1756,17 @@ namespace SIE
 			SNiObjectEditor::NiSingleInterpControllerEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSFurnitureMarkerNode),
 			SNiObjectEditor::BSFurnitureMarkerNodeEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysGravityModifier),
+			SNiObjectEditor::NiPSysGravityModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysEmitter),
+			SNiObjectEditor::NiPSysEmitterEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysVolumeEmitter),
+			SNiObjectEditor::NiPSysVolumeEmitterEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysCylinderEmitter),
+			SNiObjectEditor::NiPSysCylinderEmitterEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysBoxEmitter),
+			SNiObjectEditor::NiPSysBoxEmitterEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysSphereEmitter),
+			SNiObjectEditor::NiPSysSphereEmitterEditor);
 	}
 }
