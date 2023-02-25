@@ -10,9 +10,11 @@
 
 namespace RE
 {
-	struct BSAnimationGraphEvent;
+	class BGSActionData;
 	class IAnimationGraphManagerHolder;
 	class TESObjectREFR;
+
+	struct BSAnimationGraphEvent;
 }
 
 namespace SIE
@@ -24,6 +26,7 @@ namespace SIE
 		{
 			eEventSent,
 			eEventReceived,
+			eActionProcessed,
 		};
 
 		struct Event
@@ -66,6 +69,13 @@ namespace SIE
 
 			static inline REL::Relocation<decltype(thunk)> func;
 			static constexpr size_t idx = 0x1;
+		};
+
+		struct ActorMediator_Process
+		{
+			static bool thunk(void* mediator, RE::BGSActionData* actionData);
+
+			static inline REL::Relocation<decltype(thunk)> func;
 		};
 
 		static inline bool EnableTracking = false;

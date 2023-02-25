@@ -6,6 +6,7 @@
 
 #include <RE/B/bhkCollisionObject.h>
 #include <RE/B/bhkRigidBody.h>
+#include <RE/B/BSEffectShaderMaterial.h>
 #include <RE/B/BSFadeNode.h>
 #include <RE/B/BSFurnitureMarkerNode.h>
 #include <RE/B/BSLagBoneController.h>
@@ -17,8 +18,18 @@
 #include <RE/B/BSLightingShaderMaterialParallaxOcc.h>
 #include <RE/B/BSLightingShaderMaterialSnow.h>
 #include <RE/B/BSLightingShaderProperty.h>
+#include <RE/B/BSPSysArrayEmitter.h>
+#include <RE/B/BSPSysHavokUpdateModifier.h>
+#include <RE/B/BSPSysInheritVelocityModifier.h>
+#include <RE/B/BSPSysLODModifier.h>
+#include <RE/B/BSPSysRecycleBoundModifier.h>
+#include <RE/B/BSPSysScaleModifier.h>
+#include <RE/B/BSPSysSimpleColorModifier.h>
+#include <RE/B/BSPSysStripUpdateModifier.h>
+#include <RE/B/BSPSysSubTexModifier.h>
 #include <RE/B/BSShaderTextureSet.h>
 #include <RE/B/BSTriShape.h>
+#include <RE/B/BSWindModifier.h>
 #include <RE/B/BSXFlags.h>
 #include <RE/H/hkpRigidBody.h>
 #include <RE/N/NiAlphaProperty.h>
@@ -29,16 +40,30 @@
 #include <RE/N/NiIntegerExtraData.h>
 #include <RE/N/NiParticleSystem.h>
 #include <RE/N/NiPSysAgeDeathModifier.h>
+#include <RE/N/NiPSysAirFieldModifier.h>
 #include <RE/N/NiPSysBombModifier.h>
 #include <RE/N/NiPSysBoundUpdateModifier.h>
 #include <RE/N/NiPSysBoxEmitter.h>
+#include <RE/N/NiPSysCollider.h>
+#include <RE/N/NiPSysColliderManager.h>
+#include <RE/N/NiPSysColorModifier.h>
 #include <RE/N/NiPSysCylinderEmitter.h>
+#include <RE/N/NiPSysDragFieldModifier.h>
 #include <RE/N/NiPSysDragModifier.h>
+#include <RE/N/NiPSysGravityFieldModifier.h>
 #include <RE/N/NiPSysGravityModifier.h>
+#include <RE/N/NiPSysGrowFadeModifier.h>
 #include <RE/N/NiPSysMeshEmitter.h>
+#include <RE/N/NiPSysModifierCtlr.h>
+#include <RE/N/NiPSysPlanarCollider.h>
+#include <RE/N/NiPSysPositionModifier.h>
+#include <RE/N/NiPSysRadialFieldModifier.h>
 #include <RE/N/NiPSysRotationModifier.h>
-#include <RE/N/NiPSysSphereEmitter.h>
 #include <RE/N/NiPSysSpawnModifier.h>
+#include <RE/N/NiPSysSphereEmitter.h>
+#include <RE/N/NiPSysSphericalCollider.h>
+#include <RE/N/NiPSysTurbulenceFieldModifier.h>
+#include <RE/N/NiPSysVortexFieldModifier.h>
 #include <RE/N/NiRTTI.h>
 #include <RE/N/NiSkinInstance.h>
 #include <RE/N/NiSingleInterpController.h>
@@ -121,7 +146,8 @@ namespace SIE
 
 		template <typename BaseType>
 		bool TargetSelector(const char* label, const NiObjectContext& context,
-			BaseType*& target, const std::function<std::string_view(const BaseType*)>& nameProvider) 
+			BaseType*& target, const std::function<std::string_view(const BaseType*)>& nameProvider,
+			const std::function<bool(BaseType*)>& filter = nullptr) 
 		{
 			bool wasSelected = false;
 			if (ImGui::BeginCombo(label, target == nullptr ? "None" : nameProvider(target).data()))
@@ -131,7 +157,10 @@ namespace SIE
 				{
 					if (auto casted = netimmerse_cast<BaseType*>(item.get()))
 					{
-						possibleTargets.push_back(casted);
+						if (filter(casted))
+						{
+							possibleTargets.push_back(casted);
+						}
 					}
 				}
 
@@ -161,10 +190,10 @@ namespace SIE
 
 		template <typename T>
 		bool NiPSysModifierTargetSelector(const char* label, const NiObjectContext& context,
-			T*& target)
+			T*& target, const std::function<bool(T*)>& filter = nullptr)
 		{
 			return TargetSelector<T>(label, context, target,
-				[](const T* modifier) { return std::string_view(modifier->name.data()); });
+				[](const T* modifier) { return std::string_view(modifier->name.data()); }, filter);
 		}
 
 		struct SaveData
@@ -1505,11 +1534,12 @@ namespace SIE
 			{
 				wasEdited = true;
 			}
-			if (ImGui::DragFloat("Declination", &emitter.declination, 0.1f))
+			if (ImGui::SliderFloat("Declination", &emitter.declination, 0.f, 2 * std::numbers::pi_v<float>))
 			{
 				wasEdited = true;
 			}
-			if (ImGui::DragFloat("Declination Variation", &emitter.declinationVariation, 0.1f))
+			if (ImGui::SliderFloat("Declination Variation", &emitter.declinationVariation, 0.f,
+					2 * std::numbers::pi_v<float>))
 			{
 				wasEdited = true;
 			}
@@ -1834,6 +1864,513 @@ namespace SIE
 
 			return wasEdited;
 		}
+
+		static bool BSEffectShaderMaterialEditor(void* object, void* context)
+		{
+			auto& effectShaderMaterial = *static_cast<RE::BSEffectShaderMaterial*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat2("Falloff Angle Range", &effectShaderMaterial.falloffStartAngle, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat2("Falloff Opacity Range", &effectShaderMaterial.falloffStartOpacity,
+					0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::ColorEdit4("Base Color", &effectShaderMaterial.baseColor.red))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Soft Falloff Depth", &effectShaderMaterial.softFalloffDepth, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Base Color Scale", &effectShaderMaterial.softFalloffDepth,
+					0.1f))
+			{
+				wasEdited = true;
+			}
+			if (NifTexturePathEdit("Source Texture", "Source Texture",
+					effectShaderMaterial.sourceTexturePath))
+			{
+				RE::NiSourceTexture::Load(effectShaderMaterial.sourceTexturePath, true,
+					effectShaderMaterial.sourceTexture, false);
+				wasEdited = true;
+			}
+			if (NifTexturePathEdit("Greyscale Texture", "Greyscale Texture",
+					effectShaderMaterial.greyscaleTexturePath))
+			{
+				RE::NiSourceTexture::Load(effectShaderMaterial.greyscaleTexturePath, true,
+					effectShaderMaterial.greyscaleTexture, false);
+				wasEdited = true;
+			}
+			if (EnumSelector("Texture Clamp Mode", effectShaderMaterial.effectClampMode))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool BSPSysLODModifierEditor(void* object, void* context)
+		{
+			auto& lodModifier = *static_cast<RE::BSPSysLODModifier*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat2("LOD Distance Range", &lodModifier.lodBeginDistance,
+					0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("End Emit Scale", &lodModifier.endEmitScale,
+					0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Soft Falloff Depth", &lodModifier.endSize,
+					0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool BSPSysSimpleColorModifierEditor(void* object, void* context)
+		{
+			auto& simpleColorModifier = *static_cast<RE::BSPSysSimpleColorModifier*>(object);
+
+			bool wasEdited = false;
+
+			for (size_t colorIndex = 0; colorIndex < 3; ++colorIndex)
+			{
+				if (ImGui::ColorEdit4(std::format("Colors[{0}]", colorIndex).c_str(), &simpleColorModifier.colors[colorIndex].red))
+				{
+					wasEdited = true;
+				}
+			}
+			if (ImGui::DragFloat("Fade In Percent", &simpleColorModifier.fadeInPercent, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Fade Out Percent", &simpleColorModifier.fadeOutPercent, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat4("Color Percents", &simpleColorModifier.color1EndPercent, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysFieldModifierEditor(void* object, void* context)
+		{
+			auto& fieldModifier = *static_cast<RE::NiPSysFieldModifier*>(object);
+
+			bool wasEdited = false;
+
+			if (NiObjectNETTargetSelector<RE::NiAVObject>("Field Object",
+					*reinterpret_cast<NiObjectContext*>(context), fieldModifier.fieldObject))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Magnitude", &fieldModifier.magnitude, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Attenuation", &fieldModifier.attenuation, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::Checkbox("Use Max Distance", &fieldModifier.useMaxDistance))
+			{
+				wasEdited = true;
+			}
+			if (fieldModifier.useMaxDistance)
+			{
+				float maxDistance = fieldModifier.maxDistance;
+				if (ImGui::DragFloat("Max Distance", &maxDistance, 0.1f))
+				{
+					fieldModifier.SetMaxDistance(maxDistance);
+					wasEdited = true;
+				}
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysModifierCtlrEditor(void* object, void* context)
+		{
+			auto& modifierCtlr = *static_cast<RE::NiPSysModifierCtlr*>(object);
+
+			bool wasEdited = false;
+
+			if (NiPSysModifierTargetSelector<RE::NiPSysModifier>("Modifier",
+					*reinterpret_cast<NiObjectContext*>(context), modifierCtlr.targetModifier,
+					[&](RE::NiPSysModifier* modifier)
+					{ return modifierCtlr.IsValidInterpolatorTarget(modifier); }))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysTurbulenceFieldModifierEditor(void* object, void* context)
+		{
+			auto& turbulenceFieldModifier = *static_cast<RE::NiPSysTurbulenceFieldModifier*>(object);
+
+			bool wasEdited = false;
+
+			{
+				float frequency = turbulenceFieldModifier.frequency;
+				if (ImGui::DragFloat("Frequency", &frequency, 0.1f))
+				{
+					turbulenceFieldModifier.SetFrequency(frequency);
+					wasEdited = true;
+				}
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysVortexFieldModifierEditor(void* object, void* context)
+		{
+			auto& vortexFieldModifier =
+				*static_cast<RE::NiPSysVortexFieldModifier*>(object);
+
+			bool wasEdited = false;
+			if (NiPoint3Editor("Direction", vortexFieldModifier.direction, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysRadialFieldModifierEditor(void* object, void* context)
+		{
+			auto& radialFieldModifier = *static_cast<RE::NiPSysRadialFieldModifier*>(object);
+
+			bool wasEdited = false;
+			if (ImGui::DragFloat("Radial Type", &radialFieldModifier.radialType, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysGrowFadeModifierEditor(void* object, void* context)
+		{
+			auto& growFadeModifier = *static_cast<RE::NiPSysGrowFadeModifier*>(object);
+
+			bool wasEdited = false;
+			if (ImGui::DragFloat("Grow Time", &growFadeModifier.growTime, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragScalar("Grow Generation", ImGuiDataType_U16, &growFadeModifier.growGeneration))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Fade Time", &growFadeModifier.fadeTime, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragScalar("Fade Generation", ImGuiDataType_U16,
+					&growFadeModifier.fadeGeneration))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Base Scale", &growFadeModifier.baseScale, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysDragFieldModifierEditor(void* object, void* context)
+		{
+			auto& dragFieldModifier = *static_cast<RE::NiPSysDragFieldModifier*>(object);
+
+			bool wasEdited = false;
+			if (ImGui::Checkbox("Use Direction", &dragFieldModifier.useDirection))
+			{
+				wasEdited = true;
+			}
+			if (dragFieldModifier.useDirection)
+			{
+				if (NiPoint3Editor("Direction", dragFieldModifier.direction, 0.1f))
+				{
+					wasEdited = true;
+				}
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysAirFieldModifierEditor(void* object, void* context)
+		{
+			auto& airFieldModifier = *static_cast<RE::NiPSysAirFieldModifier*>(object);
+
+			bool wasEdited = false;
+			{
+				RE::NiPoint3 direction = airFieldModifier.direction;
+				if (NiPoint3Editor("Direction", direction, 0.1f))
+				{
+					airFieldModifier.SetDirection(direction);
+					wasEdited = true;
+				}
+			}
+			if (ImGui::DragFloat("Air Friction", &airFieldModifier.airFriction, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Inherit Velocity", &airFieldModifier.inheritVelocity, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::Checkbox("Inherit Rotation", &airFieldModifier.inheritRotation))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::Checkbox("Component Only", &airFieldModifier.componentOnly))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::Checkbox("Enable Spread", &airFieldModifier.enableSpread))
+			{
+				wasEdited = true;
+			}
+			if (airFieldModifier.enableSpread)
+			{
+				if (ImGui::DragFloat("Spread", &airFieldModifier.spread, 0.1f))
+				{
+					wasEdited = true;
+				}
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysColliderManagerEditor(void* object, void* context)
+		{
+			auto& colliderManager = *static_cast<RE::NiPSysColliderManager*>(object);
+
+			bool wasEdited = false;
+
+			auto& rttiCache = RTTICache::Instance();
+
+			{
+				size_t colliderIndex = 0;
+				RE::NiPSysCollider* currentCollider = colliderManager.collider.get();
+				RE::NiPSysCollider* previousCollider = nullptr;
+				while (currentCollider != nullptr)
+				{
+					const std::string& typeName = rttiCache.GetTypeName(currentCollider);
+					if (PushingCollapsingHeader(std::format("[Collider] <{}>##{}", typeName, colliderIndex).c_str()))
+					{
+						if (ImGui::Button("Remove"))
+						{
+							(previousCollider == nullptr ? colliderManager.collider :
+														   previousCollider->nextCollider) =
+								currentCollider->nextCollider;
+							wasEdited = true;
+						}
+						else
+						{
+							if (rttiCache.BuildEditor(colliderManager.collider.get(), context))
+							{
+								wasEdited = true;
+							}
+						}
+						ImGui::TreePop();
+					}
+
+					previousCollider = currentCollider;
+					currentCollider = previousCollider->nextCollider.get();
+					++colliderIndex;
+				}
+			}
+
+			{
+				static const auto colliderTypeDescriptor =
+					&*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysCollider);
+				static const RTTI* newColliderRtti = nullptr;
+
+				NiObjectTypeSelector("##NewCollider", *colliderTypeDescriptor, newColliderRtti);
+				ImGui::SameLine();
+				if (ImGui::Button("Add Collider"))
+				{
+					if (newColliderRtti != nullptr)
+					{
+						if (auto newCollider =
+								static_cast<RE::NiPSysCollider*>(newColliderRtti->constructor()))
+						{
+							newCollider->parent = &colliderManager;
+
+							RE::NiPSysCollider* currentCollider = colliderManager.collider.get();
+							if (currentCollider == nullptr)
+							{
+								colliderManager.collider = RE::NiPointer<RE::NiPSysCollider>(newCollider);
+							}
+							else
+							{
+								while (currentCollider->nextCollider != nullptr)
+								{
+									currentCollider = currentCollider->nextCollider.get();
+								}
+								currentCollider->nextCollider = RE::NiPointer<RE::NiPSysCollider>(newCollider);
+							}
+						}
+					}
+				}
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysGravityFieldModifierEditor(void* object, void* context)
+		{
+			auto& gravityFieldModifier = *static_cast<RE::NiPSysGravityFieldModifier*>(object);
+
+			bool wasEdited = false;
+			{
+				RE::NiPoint3 direction = gravityFieldModifier.direction;
+				if (NiPoint3Editor("Direction", direction, 0.1f))
+				{
+					gravityFieldModifier.SetDirection(direction);
+					wasEdited = true;
+				}
+			}
+
+			return wasEdited;
+		}
+
+		static bool BSPSysStripUpdateModifierEditor(void* object, void* context)
+		{
+			auto& stripUpdateModifier = *static_cast<RE::BSPSysStripUpdateModifier*>(object);
+
+			bool wasEdited = false;
+			if (ImGui::DragFloat("Update Delta Time", &stripUpdateModifier.updateDeltaTime, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool BSPSysSubTexModifierEditor(void* object, void* context)
+		{
+			auto& subTexModifier = *static_cast<RE::BSPSysSubTexModifier*>(object);
+
+			bool wasEdited = false;
+			if (ImGui::DragFloat("Start Frame", &subTexModifier.startFrame, 1.f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Start Frame Fudge", &subTexModifier.startFrameFudge, 1.f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("End Frame", &subTexModifier.endFrame, 1.f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Loop Start Frame", &subTexModifier.loopStartFrame, 1.f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Loop Start Frame Fudge", &subTexModifier.loopStartFrameFudge, 1.f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Frame Count", &subTexModifier.frameCount, 1.f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Frame Count Fudge", &subTexModifier.frameCountFudge, 1.f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysColliderEditor(void* object, void* context)
+		{
+			auto& collider = *static_cast<RE::NiPSysCollider*>(object);
+
+			bool wasEdited = false;
+			if (ImGui::DragFloat("Bounce", &collider.bounce, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::Checkbox("Spawn On Collider", &collider.spawnOnCollide))
+			{
+				wasEdited = true;
+			}
+			if (collider.spawnOnCollide)
+			{
+				if (NiPSysModifierTargetSelector<RE::NiPSysSpawnModifier>("Spawn Modifier",
+						*reinterpret_cast<NiObjectContext*>(context), collider.spawnModifier))
+				{
+					wasEdited = true;
+				}
+			}
+			if (ImGui::Checkbox("Die On Collider", &collider.dieOnCollide))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysSphericalColliderEditor(void* object, void* context)
+		{
+			auto& sphericalCollider = *static_cast<RE::NiPSysSphericalCollider*>(object);
+
+			bool wasEdited = false;
+			if (ImGui::DragFloat("Radius", &sphericalCollider.radius, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
+		static bool NiPSysPlanarColliderEditor(void* object, void* context)
+		{
+			auto& planarCollider = *static_cast<RE::NiPSysPlanarCollider*>(object);
+
+			bool wasEdited = false;
+			if (ImGui::DragFloat("Width", &planarCollider.width, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragFloat("Height", &planarCollider.height, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (NiPoint3Editor("X Axis", planarCollider.xAxis, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (NiPoint3Editor("Y Axis", planarCollider.yAxis, 0.1f))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
 	}
 
 	bool DispatchableNiObjectEditor(const char* label, RE::NiObject& object)
@@ -1868,18 +2405,28 @@ namespace SIE
 			SNiObjectEditor::NiObjectNETEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiAVObject),
 			SNiObjectEditor::NiAVObjectEditor);
+
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiNode),
 			SNiObjectEditor::NiNodeEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiBillboardNode),
+			SNiObjectEditor::NiBillboardNodeEditor);
+
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSGeometry),
 			SNiObjectEditor::BSGeometryEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSTriShape),
 			SNiObjectEditor::BSTriShapeEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiParticles),
+			SNiObjectEditor::NiParticlesEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiParticleSystem),
+			SNiObjectEditor::NiParticleSystemEditor);
+
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiAlphaProperty),
 			SNiObjectEditor::NiAlphaPropertyEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSShaderProperty),
 			SNiObjectEditor::BSShaderPropertyEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderProperty),
 			SNiObjectEditor::BSLightingShaderPropertyEditor);
+
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSShaderMaterial),
 			SNiObjectEditor::BSShaderMaterialEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderMaterialBase),
@@ -1905,14 +2452,21 @@ namespace SIE
 		rttiCache.RegisterEditor(
 			*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLightingShaderMaterialSnow),
 			SNiObjectEditor::BSLightingShaderMaterialSnowEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSEffectShaderMaterial),
+			SNiObjectEditor::BSEffectShaderMaterialEditor);
+
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSXFlags),
 			SNiObjectEditor::BSXFlagsEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiIntegerExtraData),
 			SNiObjectEditor::NiIntegerExtraDataEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiStringExtraData),
 			SNiObjectEditor::NiStringExtraDataEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSFurnitureMarkerNode),
+			SNiObjectEditor::BSFurnitureMarkerNodeEditor);
+
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSShaderTextureSet),
 			SNiObjectEditor::BSShaderTextureSetEditor);
+
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_bhkRefObject),
 			SNiObjectEditor::bhkRefObjectEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_bhkNiCollisionObject),
@@ -1921,49 +2475,86 @@ namespace SIE
 			SNiObjectEditor::bhkEntityEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_bhkRigidBody),
 			SNiObjectEditor::bhkRigidBodyEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiParticles),
-			SNiObjectEditor::NiParticlesEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiParticleSystem),
-			SNiObjectEditor::NiParticleSystemEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiBillboardNode),
-			SNiObjectEditor::NiBillboardNodeEditor);
+
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiTimeController),
 			SNiObjectEditor::NiTimeControllerEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiSingleInterpController),
+			SNiObjectEditor::NiSingleInterpControllerEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiControllerManager),
 			SNiObjectEditor::NiControllerManagerEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSLagBoneController),
 			SNiObjectEditor::BSLagBoneControllerEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiSingleInterpController),
-			SNiObjectEditor::NiSingleInterpControllerEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSFurnitureMarkerNode),
-			SNiObjectEditor::BSFurnitureMarkerNodeEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysModifier),
-			SNiObjectEditor::NiPSysModifierEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysGravityModifier),
-			SNiObjectEditor::NiPSysGravityModifierEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysEmitter),
-			SNiObjectEditor::NiPSysEmitterEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysVolumeEmitter),
-			SNiObjectEditor::NiPSysVolumeEmitterEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysCylinderEmitter),
-			SNiObjectEditor::NiPSysCylinderEmitterEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysBoxEmitter),
-			SNiObjectEditor::NiPSysBoxEmitterEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysSphereEmitter),
-			SNiObjectEditor::NiPSysSphereEmitterEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysModifierCtlr),
+			SNiObjectEditor::NiPSysModifierCtlrEditor);
+
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSPSysLODModifier),
+			SNiObjectEditor::BSPSysLODModifierEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSPSysSimpleColorModifier),
+			SNiObjectEditor::BSPSysSimpleColorModifierEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSPSysStripUpdateModifier),
+			SNiObjectEditor::BSPSysStripUpdateModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSPSysSubTexModifier),
+			SNiObjectEditor::BSPSysSubTexModifierEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysAgeDeathModifier),
 			SNiObjectEditor::NiPSysAgeDeathModifierEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysSpawnModifier),
-			SNiObjectEditor::NiPSysSpawnModifierEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysMeshEmitter),
-			SNiObjectEditor::NiPSysMeshEmitterEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysAirFieldModifier),
+			SNiObjectEditor::NiPSysAirFieldModifierEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysBombModifier),
 			SNiObjectEditor::NiPSysBombModifierEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysBoundUpdateModifier),
+			SNiObjectEditor::NiPSysBoundUpdateModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysBoxEmitter),
+			SNiObjectEditor::NiPSysBoxEmitterEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysColliderManager),
+			SNiObjectEditor::NiPSysColliderManagerEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysCylinderEmitter),
+			SNiObjectEditor::NiPSysCylinderEmitterEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysDragModifier),
 			SNiObjectEditor::NiPSysDragModifierEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysDragFieldModifier),
+			SNiObjectEditor::NiPSysDragFieldModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysEmitter),
+			SNiObjectEditor::NiPSysEmitterEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysFieldModifier),
+			SNiObjectEditor::NiPSysFieldModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysGravityModifier),
+			SNiObjectEditor::NiPSysGravityModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysGravityFieldModifier),
+			SNiObjectEditor::NiPSysGravityFieldModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysGrowFadeModifier),
+			SNiObjectEditor::NiPSysGrowFadeModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysMeshEmitter),
+			SNiObjectEditor::NiPSysMeshEmitterEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysModifier),
+			SNiObjectEditor::NiPSysModifierEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysRadialFieldModifier),
+			SNiObjectEditor::NiPSysRadialFieldModifierEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysRotationModifier),
 			SNiObjectEditor::NiPSysRotationModifierEditor);
-		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysBoundUpdateModifier),
-			SNiObjectEditor::NiPSysBoundUpdateModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysSpawnModifier),
+			SNiObjectEditor::NiPSysSpawnModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysSphereEmitter),
+			SNiObjectEditor::NiPSysSphereEmitterEditor);
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysTurbulenceFieldModifier),
+			SNiObjectEditor::NiPSysTurbulenceFieldModifierEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysVolumeEmitter),
+			SNiObjectEditor::NiPSysVolumeEmitterEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysVortexFieldModifier),
+			SNiObjectEditor::NiPSysVortexFieldModifierEditor);
+
+		rttiCache.RegisterEditor(
+			*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysCollider),
+			SNiObjectEditor::NiPSysColliderEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysSphericalCollider),
+			SNiObjectEditor::NiPSysSphericalColliderEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiPSysPlanarCollider),
+			SNiObjectEditor::NiPSysPlanarColliderEditor);
 	}
 }

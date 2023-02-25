@@ -2,15 +2,18 @@
 
 #include "Utils/Engine.h"
 
+#include <RE/B/BGSActionData.h>
 #include <RE/B/BSAnimationGraphEvent.h>
+
+#include <magic_enum.hpp>
 
 namespace SIE
 {
 	std::string GraphTracker::Event::ToString() const 
 	{ 
-		return std::format("{:%H:%M:%S} Event {} was {} graph",
+		return std::format("{:%H:%M:%S} {} {}",
 			std::chrono::floor<std::chrono::milliseconds>(time), name,
-			type == EventType::eEventReceived ? "received from" : "sent to");
+			magic_enum::enum_name(type));
 	}
 
 	GraphTracker& GraphTracker::Instance()
@@ -120,6 +123,27 @@ namespace SIE
 				stl::write_thunk_jmp<TESObjectREFR_NotifyAnimationGraph>(target.address());
 			}
 		}
+
+		{
+			const std::array targets{
+				REL::Relocation<std::uintptr_t>(RELOCATION_ID(40551, 41557),
+					OFFSET(0xA, 0xA)),
+			};
+			for (const auto& target : targets)
+			{
+				stl::write_thunk_jmp<ActorMediator_Process>(target.address());
+			}
+		}
+
+		{
+			const std::array targets{
+				REL::Relocation<std::uintptr_t>(RELOCATION_ID(37997, 38951), OFFSET(0x36, 0x36)),
+			};
+			for (const auto& target : targets)
+			{
+				stl::write_thunk_call<ActorMediator_Process>(target.address());
+			}
+		}
 	}
 
 	RE::BSEventNotifyControl GraphTracker::TESObjectREFR_ProcessEvent::thunk(
@@ -158,5 +182,23 @@ namespace SIE
 		}
 
 		return func(holder, eventName);
+	}
+
+	bool GraphTracker::ActorMediator_Process::thunk(void* mediator, RE::BGSActionData* actionData)
+	{
+		const bool processed = func(mediator, actionData);
+
+		if (EnableTracking && processed && Target == actionData->source.get())
+		{
+			std::lock_guard lock(Mutex);
+			Events.push_back(
+				{ EventType::eActionProcessed, actionData->action->formEditorID.data(), std::chrono::system_clock::now() });
+			if (EnableLogging)
+			{
+				logger::info("Action {} was processed", actionData->action->formEditorID.data());
+			}
+		}
+
+		return processed;
 	}
 }

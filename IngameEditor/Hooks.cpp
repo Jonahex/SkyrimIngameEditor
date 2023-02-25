@@ -1166,26 +1166,6 @@ namespace BehaviorGraph
 		static inline bool enableFailed = true;
 	};
 
-	struct ActorMediator_Process
-	{
-		static bool thunk(void* mediator, RE::BGSActionData* actionData)
-		{
-			const bool processed = func(mediator, actionData);
-
-			if (enable && processed && refr == actionData->source.get()) 
-			{
-				std::lock_guard lock(mutex);
-				//logger::info(std::format("Action {} was processed", actionData->action->formEditorID.data()));
-			}
-
-			return func(mediator, actionData);
-		}
-		static inline REL::Relocation<decltype(thunk)> func;
-
-		static inline RE::TESObjectREFR* refr = nullptr;
-		static inline bool enable = true;
-	};
-
 	struct Test
 	{
 		static void thunk(void* mediator, RE::BGSActionData* action)
