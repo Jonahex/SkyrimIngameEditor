@@ -3,6 +3,7 @@
 #include "Core/ShaderCache.h"
 #include "Gui/CellEditor.h"
 #include "Gui/Gui.h"
+#include "Gui/NiObjectEditor.h"
 #include "Gui/TargetEditor.h"
 #include "Gui/Utils.h"
 #include "Gui/WeatherEditor.h"
@@ -10,6 +11,7 @@
 #include "Systems/WeatherEditorSystem.h"
 #include "Utils/Engine.h"
 #include "Utils/OverheadBuilder.h"
+#include "Utils/RTTICache.h"
 #include "Utils/TargetManager.h"
 
 #include <RE/B/BGSGrassManager.h>
@@ -18,7 +20,9 @@
 #include <RE/I/ImageSpaceEffectManager.h>
 #include <RE/M/Main.h>
 #include <RE/N/NiCamera.h>
+#include <RE/N/NiNode.h>
 #include <RE/N/NiRTTI.h>
+#include <RE/N/NiStream.h>
 #include <RE/P/PlayerCharacter.h>
 #include <RE/S/Sky.h>
 #include <RE/T/TES.h>
@@ -162,6 +166,64 @@ namespace SIE
 				}
 			}
 			return wasEdited;
+		}
+
+		void NifEditor(const char* label, RE::NiNode& rootNode) 
+		{ 
+			ImGui::PushID(label);
+
+			static RE::NiPointer<RE::NiNode> editObject;
+
+			if (editObject != nullptr)
+			{
+				if (ImGui::Button("Clear"))
+				{
+					rootNode.DetachChild(editObject.get());
+					editObject.reset();
+				}
+			}
+
+			static RE::BSFixedString loadPath;
+			FreeMeshPathEdit("LoadPath", "", loadPath);
+			ImGui::SameLine();
+			if (ImGui::Button("Load"))
+			{
+				auto stream = RE::NiStream::Create();
+				stream->Load3(loadPath.c_str());
+				if (!stream->topObjects.empty())
+				{
+					if (auto avObject =
+							netimmerse_cast<RE::NiNode*>(stream->topObjects.front().get()))
+					{
+						if (editObject != nullptr)
+						{
+							rootNode.DetachChild(editObject.get());
+							editObject.reset();
+						}
+						editObject = RE::NiPointer(static_cast<RE::NiNode*>(RTTICache::Instance().Construct(
+							*REL::Relocation<TypeDescriptor*>(RE::RTTI_NiNode))));
+						editObject->name = "Nif Editor Object";
+						editObject->AttachChild(avObject);
+						editObject->local.translate = { 0.f, 50.f, 110.f };
+						//editObject = RE::NiPointer(avObject);
+						rootNode.AttachChild(editObject.get());
+					}
+				}
+				stream->~NiStream();
+				RE::free(stream);
+			}
+
+			if (editObject != nullptr)
+			{
+				if (DispatchableNiObjectEditor("", *editObject))
+				{
+					RE::NiUpdateData updateData;
+					updateData.flags.set(RE::NiUpdateData::Flag::kDirty);
+					editObject->Update(updateData);
+				}
+			}
+
+			ImGui::PopID();
 		}
 	}
 
@@ -394,6 +456,15 @@ namespace SIE
 					ImGui::TreePop();
 				}
 #endif
+			}
+		}
+
+		if (player != nullptr && player->Get3D() != nullptr)
+		{
+			if (PushingCollapsingHeader("Nif Editor"))
+			{
+				SMainWindow::NifEditor("NifEditor", *static_cast<RE::NiNode*>(player->Get3D()));
+				ImGui::TreePop();
 			}
 		}
 

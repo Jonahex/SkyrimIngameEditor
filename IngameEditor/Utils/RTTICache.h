@@ -48,6 +48,7 @@ namespace SIE
 		const std::string& GetTypeName(const void* object);
 		bool BuildEditor(void* object, void* context = nullptr);
 		std::vector<const RTTI*> GetConstructibleDescendants(const TypeDescriptor& typeDescriptor);
+		void* Construct(const TypeDescriptor& typeDescriptor);
 
 	private:
 		void CacheBases(int hierarchyDescriptorOffset, uintptr_t imageBase);

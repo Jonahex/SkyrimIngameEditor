@@ -234,6 +234,19 @@ namespace SIE
 		return result;
 	}
 
+	void* RTTICache::Construct(const TypeDescriptor& typeDescriptor)
+	{
+		auto cacheIt = cache.find(&typeDescriptor);
+		if (cacheIt != cache.cend())
+		{
+			if (auto ctor = cacheIt->second.constructor)
+			{
+				return ctor();
+			}
+		}
+		return nullptr;
+	}
+
 	void RegisterNiConstructors() 
 	{
 		SRTTICache::RegisterNiConstructor(RE::RTTI_NiAdditionalGeometryData);
