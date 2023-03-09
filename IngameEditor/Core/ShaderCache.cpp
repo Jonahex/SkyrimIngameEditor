@@ -659,6 +659,26 @@ namespace SIE
 				defines[0] = { "SIMPLE_COLOR", nullptr };
 				++defines;
 			}
+			else if (descriptor ==
+				static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISCopyDynamicFetchDisabled))
+			{
+				defines[0] = { "DYNAMIC_FETCH_DISABLED", nullptr };
+				++defines;
+			}
+			else if (descriptor ==
+					 static_cast<uint32_t>(
+						 RE::ImageSpaceEffectManager::EffectType::ISCopyGrayScale))
+			{
+				defines[0] = { "GRAY_SCALE", nullptr };
+				++defines;
+			}
+			else if (descriptor ==
+					 static_cast<uint32_t>(
+						 RE::ImageSpaceEffectManager::EffectType::ISCopyTextureMask))
+			{
+				defines[0] = { "TEXTURE_MASK", nullptr };
+				++defines;
+			}
 			defines[0] = { nullptr, nullptr };
 		}
 
@@ -1489,6 +1509,23 @@ namespace SIE
 					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterFlow) },
 				{ "BSImagespaceShaderISWaterBlend",
 					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterBlend) },
+				{ "BSImagespaceShaderGreyScale",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISCopyGrayScale) },
+				{ "BSImagespaceShaderCopy",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISCopy) },
+				{ "BSImagespaceShaderCopyScaleBias",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISCopyScaleBias) },
+				{ "BSImagespaceShaderCopyCustomViewport",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISCopyCustomViewport) },
+				{ "BSImagespaceShaderCopyTextureMask",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISCopyTextureMask) },
+				{ "BSImagespaceShaderCopyDynamicFetchDisabled",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISCopyDynamicFetchDisabled) },
 			};
 
 			auto it = descriptors.find(imagespaceShader.name.c_str());
