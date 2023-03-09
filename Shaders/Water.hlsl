@@ -303,9 +303,9 @@ PS_OUTPUT main(PS_INPUT input)
 {
 	PS_OUTPUT psout;
 
+#if defined(SIMPLE) || defined(UNDERWATER) || defined(LOD) || defined(SPECULAR)
 	float3 viewDirection = normalize(input.WPosition.xyz);
 
-#if defined(SIMPLE) || defined(UNDERWATER) || defined(LOD) || defined(SPECULAR)
     float distanceFraction = saturate(
 		lerp(UnknownPerFrame2[22].w, 1, (input.WPosition.w - 8192) / (WaterParams.x - 8192)));
 	float4 distanceMul0 = saturate(lerp(VarAmounts.z, 1, -(distanceFraction - 1))).xxxx;
@@ -537,6 +537,8 @@ PS_OUTPUT main(PS_INPUT input)
 #endif
 
 #if defined(STENCIL)    
+	float3 viewDirection = normalize(input.WorldPosition.xyz);
+
     float3 normal =
 		normalize(cross(ddx_coarse(input.WorldPosition.xyz), ddy_coarse(input.WorldPosition.xyz)));
 

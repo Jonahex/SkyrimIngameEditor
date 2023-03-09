@@ -1,5 +1,7 @@
 #include "Core/ShaderCache.h"
 
+#include <RE/B/BSImageSpaceShader.h>
+#include <RE/I/ImageSpaceEffectManager.h>
 #include <RE/V/VertexDesc.h>
 
 #include <magic_enum.hpp>
@@ -7,6 +9,10 @@
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <wrl/client.h>
+
+#ifdef max
+#undef max
+#endif
 
 namespace SIE
 {
@@ -600,6 +606,62 @@ namespace SIE
 			defines[0] = { nullptr, nullptr };
 		}
 
+		static void GetImagespaceShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
+		{
+			if ((descriptor >=
+						static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur3) &&
+					descriptor <=
+						static_cast<uint32_t>(
+							RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur15)) ||
+				descriptor ==
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur))
+			{
+				if (descriptor ==
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur))
+				{
+					defines[0] = { "BLUR_RADIUS", "0" };
+					++defines;
+				}
+				else
+				{
+					static constexpr std::array<const char*, 7> blurRadiusDefines = { { "3", "5", "7",
+						"9", "11", "13", "15" } };
+					const size_t blurRadius = static_cast<size_t>(
+						(descriptor - static_cast<uint32_t>(
+										  RE::ImageSpaceEffectManager::EffectType::ISBlur3)) %
+						blurRadiusDefines.size());
+					defines[0] = { "BLUR_RADIUS", blurRadiusDefines[blurRadius] };
+					++defines;
+					const size_t blurType = static_cast<size_t>(
+						(descriptor - static_cast<uint32_t>(
+										  RE::ImageSpaceEffectManager::EffectType::ISBlur3)) /
+						blurRadiusDefines.size());
+					if (blurType == 1)
+					{
+						defines[0] = { "BLUR_NON_HDR", nullptr };
+						++defines;
+					}
+					else if (blurType == 2)
+					{
+						defines[0] = { "BLUR_BRIGHT_PASS", nullptr };
+						++defines;
+					}
+				}
+			}
+			else if (descriptor == static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISDisplayDepth))
+			{
+				defines[0] = { "DISPLAY_DEPTH", nullptr };
+				++defines;
+			}
+			else if (descriptor ==
+					 static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISSimpleColor))
+			{
+				defines[0] = { "SIMPLE_COLOR", nullptr };
+				++defines;
+			}
+			defines[0] = { nullptr, nullptr };
+		}
+
 		static void GetShaderDefines(RE::BSShader::Type type, uint32_t descriptor,
 			D3D_SHADER_MACRO* defines)
 		{
@@ -616,6 +678,9 @@ namespace SIE
 				break;
 			case RE::BSShader::Type::BloodSplatter:
 				GetBloodSplaterShaderDefines(descriptor, defines);
+				break;
+			case RE::BSShader::Type::ImageSpace:
+				GetImagespaceShaderDefines(descriptor, defines);
 				break;
 			case RE::BSShader::Type::Lighting:
 				GetLightingShaderDefines(descriptor, defines);
@@ -892,19 +957,48 @@ namespace SIE
 			return result;
 		}
 
-		static int32_t GetVariableIndex(ShaderClass shaderClass, RE::BSShader::Type shaderType, const char* name)
+		static int32_t GetVariableIndex(ShaderClass shaderClass, const RE::BSShader& shader, const char* name)
 		{
-			static auto variableNames = GetVariableIndices();
-
-			const auto& names =
-				variableNames[static_cast<size_t>(shaderType)][static_cast<size_t>(shaderClass)];
-			auto it = names.find(name);
-			if (it == names.cend())
+			if (shader.shaderType == RE::BSShader::Type::ImageSpace)
 			{
-				return -1;
-			}
+				const auto& imagespaceShader = static_cast<const RE::BSImagespaceShader&>(shader);
 
-			return it->second;
+				if (shaderClass == ShaderClass::Vertex)
+				{
+					for (size_t nameIndex = 0; nameIndex < imagespaceShader.vsConstantNames.size();
+						 ++nameIndex)
+					{
+						if (std::string_view(imagespaceShader.vsConstantNames[nameIndex].c_str()) ==
+							name)
+						{
+							return static_cast<int32_t>(nameIndex);
+						}
+					}
+				}
+				else if (shaderClass == ShaderClass::Pixel)
+				{
+					for (size_t nameIndex = 0; nameIndex < imagespaceShader.psConstantNames.size(); ++nameIndex)
+					{
+						if (std::string_view(imagespaceShader.psConstantNames[nameIndex].c_str()) == name)
+						{
+							return static_cast<int32_t>(nameIndex);
+						}
+					}
+				}
+			}
+			else
+			{
+				static auto variableNames = GetVariableIndices();
+
+				const auto& names = variableNames[static_cast<size_t>(shader.shaderType.get())]
+												 [static_cast<size_t>(shaderClass)];
+				auto it = names.find(name);
+				if (it != names.cend())
+				{
+					return it->second;
+				}
+			}
+			return -1;
 		}
 
 		static std::string MergeDefinesString(const std::array<D3D_SHADER_MACRO, 64>& defines)
@@ -936,19 +1030,14 @@ namespace SIE
 			std::array<size_t, 3>& bufferSizes,
 			std::array<int8_t, MaxOffsetsSize>& constantOffsets,
 			uint64_t& vertexDesc,
-			ShaderClass shaderClass, RE::BSShader::Type shaderType, uint32_t descriptor)
+			ShaderClass shaderClass, uint32_t descriptor, const RE::BSShader& shader)
 		{
 			D3D11_SHADER_DESC desc;
 			if (FAILED(reflector.GetDesc(&desc)))
 			{
 				logger::error("Failed to get shader descriptor for {} shader {}::{}",
-					magic_enum::enum_name(shaderClass), magic_enum::enum_name(shaderType),
+					magic_enum::enum_name(shaderClass), magic_enum::enum_name(shader.shaderType.get()),
 					descriptor);
-				return;
-			}
-
-			if (desc.ConstantBuffers <= 0)
-			{
 				return;
 			}
 
@@ -965,7 +1054,7 @@ namespace SIE
 						logger::error(
 							"Failed to get input parameter {} descriptor for {} shader {}::{}",
 							inputIndex, magic_enum::enum_name(shaderClass),
-							magic_enum::enum_name(shaderType),
+							magic_enum::enum_name(shader.shaderType.get()),
 							descriptor);
 					}
 					else
@@ -1031,6 +1120,11 @@ namespace SIE
 				}
 			}
 
+			if (desc.ConstantBuffers <= 0)
+			{
+				return;
+			}
+
 			auto mapBufferConsts =
 				[&](const char* bufferName, size_t& bufferSize)
 			{
@@ -1039,7 +1133,7 @@ namespace SIE
 				{
 					logger::warn("Buffer {} not found for {} shader {}::{}",
 						bufferName, magic_enum::enum_name(shaderClass),
-						magic_enum::enum_name(shaderType),
+						magic_enum::enum_name(shader.shaderType.get()),
 						descriptor);
 					return;
 				}
@@ -1049,7 +1143,7 @@ namespace SIE
 				{
 					logger::warn("Failed to get buffer {} descriptor for {} shader {}::{}",
 						bufferName, magic_enum::enum_name(shaderClass),
-						magic_enum::enum_name(shaderType),
+						magic_enum::enum_name(shader.shaderType.get()),
 						descriptor);
 					return;
 				}
@@ -1062,23 +1156,51 @@ namespace SIE
 					if (FAILED(var->GetDesc(&varDesc)))
 					{
 						logger::error("Failed to get variable descriptor for {} shader {}::{}",
-							magic_enum::enum_name(shaderClass), magic_enum::enum_name(shaderType),
+							magic_enum::enum_name(shaderClass),
+							magic_enum::enum_name(shader.shaderType.get()),
 							descriptor);
 						continue;
 					}
 
-					const auto variableIndex =
-						GetVariableIndex(shaderClass, shaderType, varDesc.Name);
+					const auto variableIndex = GetVariableIndex(shaderClass, shader, varDesc.Name);
 					if (variableIndex != -1)
 					{
 						constantOffsets[variableIndex] = varDesc.StartOffset / 4;
 					}
 					else
 					{
-						logger::error("Unknown variable name {} in {} shader {}::{}",
-							varDesc.Name, magic_enum::enum_name(shaderClass),
-							magic_enum::enum_name(shaderType),
-							descriptor);
+						logger::error("Unknown variable name {} in {} shader {}::{}", varDesc.Name,
+							magic_enum::enum_name(shaderClass),
+							magic_enum::enum_name(shader.shaderType.get()), descriptor);
+					}
+
+					if (shader.shaderType == RE::BSShader::Type::ImageSpace)
+					{
+						D3D11_SHADER_TYPE_DESC varTypeDesc;
+						var->GetType()->GetDesc(&varTypeDesc);
+						if (varTypeDesc.Elements > 0)
+						{
+							const auto elementSize = varDesc.Size / varTypeDesc.Elements;
+							for (uint32_t arrayIndex = 1; arrayIndex < varTypeDesc.Elements;
+								 ++arrayIndex)
+							{
+								const std::string varName =
+									std::format("{}[{}]", varDesc.Name, arrayIndex);
+								const auto variableIndex =
+									GetVariableIndex(shaderClass, shader, varName.c_str());
+								if (variableIndex != -1)
+								{
+									constantOffsets[variableIndex] =
+										(varDesc.StartOffset + elementSize * arrayIndex) / 4;
+								}
+								else
+								{
+									logger::error("Unknown variable name {} in {} shader {}::{}",
+										varName, magic_enum::enum_name(shaderClass),
+										magic_enum::enum_name(shader.shaderType.get()), descriptor);
+								}
+							}
+						}
 					}
 				}
 
@@ -1094,7 +1216,10 @@ namespace SIE
 			uint32_t descriptor)
 		{
 			const auto type = shader.shaderType.get();
-			const std::wstring path = GetShaderPath(shader.fxpFilename);
+			const std::wstring path = GetShaderPath(
+				shader.shaderType == RE::BSShader::Type::ImageSpace ?
+					std::string_view(static_cast<const RE::BSImagespaceShader&>(shader).originalShaderName.c_str()) :
+					shader.fxpFilename);
 
 			std::array<D3D_SHADER_MACRO, 64> defines;
 			if (shaderClass == ShaderClass::Vertex)
@@ -1139,7 +1264,7 @@ namespace SIE
 		}
 
 		std::unique_ptr<RE::BSGraphics::VertexShader> CreateVertexShader(ID3DBlob& shaderData,
-			RE::BSShader::Type type, uint32_t descriptor) 
+			const RE::BSShader& shader, uint32_t descriptor) 
 		{
 			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
 			static const auto perTechniqueBuffersArray =
@@ -1165,15 +1290,14 @@ namespace SIE
 				IID_PPV_ARGS(&reflector));
 			if (FAILED(reflectionResult))
 			{
-				logger::error("Failed to reflect vertex shader {}::{}", magic_enum::enum_name(type),
+				logger::error("Failed to reflect vertex shader {}::{}", magic_enum::enum_name(shader.shaderType.get()),
 					descriptor);
 			}
 			else
 			{
 				std::array<size_t, 3> bufferSizes = { 0, 0, 0 };
 				std::fill(newShader->constantTable.begin(), newShader->constantTable.end(), 0);
-				ReflectConstantBuffers(*reflector.Get(), bufferSizes, newShader->constantTable, newShader->shaderDesc,
-					ShaderClass::Vertex, type, descriptor);
+				ReflectConstantBuffers(*reflector.Get(), bufferSizes, newShader->constantTable, newShader->shaderDesc, ShaderClass::Vertex, descriptor, shader);
 				if (bufferSizes[0] != 0)
 				{
 					newShader->constantBuffers[0].buffer =
@@ -1210,7 +1334,7 @@ namespace SIE
 		}
 
 		std::unique_ptr<RE::BSGraphics::PixelShader> CreatePixelShader(ID3DBlob& shaderData,
-			RE::BSShader::Type type, uint32_t descriptor)
+			const RE::BSShader& shader, uint32_t descriptor)
 		{
 			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
 			static const auto perTechniqueBuffersArray =
@@ -1229,7 +1353,7 @@ namespace SIE
 				shaderData.GetBufferSize(), IID_PPV_ARGS(&reflector));
 			if (FAILED(reflectionResult))
 			{
-				logger::error("Failed to reflect vertex shader {}::{}", magic_enum::enum_name(type),
+				logger::error("Failed to reflect vertex shader {}::{}", magic_enum::enum_name(shader.shaderType.get()),
 					descriptor);
 			}
 			else
@@ -1239,7 +1363,7 @@ namespace SIE
 				uint64_t dummy;
 				ReflectConstantBuffers(*reflector.Get(), bufferSizes, newShader->constantTable,
 					dummy,
-					ShaderClass::Pixel, type, descriptor);
+					ShaderClass::Pixel, descriptor, shader);
 				if (bufferSizes[0] != 0)
 				{
 					newShader->constantBuffers[0].buffer =
@@ -1275,21 +1399,118 @@ namespace SIE
 			return newShader;
 		}
 
-		static bool IsSupportedShader(const RE::BSShader& shader)
+		static bool IsSupportedShader(const RE::BSShader& shader, uint32_t descriptor)
 		{
+			if (shader.shaderType == RE::BSShader::Type::ImageSpace)
+			{
+				return descriptor != std::numeric_limits<uint32_t>::max();
+			}
 			return shader.shaderType == RE::BSShader::Type::Lighting ||
 			       shader.shaderType == RE::BSShader::Type::BloodSplatter ||
 			       shader.shaderType == RE::BSShader::Type::DistantTree ||
 			       shader.shaderType == RE::BSShader::Type::Sky ||
 			       shader.shaderType == RE::BSShader::Type::Grass ||
-			       shader.shaderType == RE::BSShader::Type::Particle;
+			       shader.shaderType == RE::BSShader::Type::Particle ||
+			       shader.shaderType == RE::BSShader::Type::Water;
+		}
+
+		static uint32_t GetImagespaceShaderDescriptor(const RE::BSImagespaceShader& imagespaceShader)
+		{
+			static const std::unordered_map<std::string_view, uint32_t> descriptors{
+				{ "BSImagespaceShaderISBlur",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur) },
+				{ "BSImagespaceShaderBlur3",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur3) },
+				{ "BSImagespaceShaderBlur5",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur5) },
+				{ "BSImagespaceShaderBlur7",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur7) },
+				{ "BSImagespaceShaderBlur9",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur9) },
+				{ "BSImagespaceShaderBlur11",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur11) },
+				{ "BSImagespaceShaderBlur13",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur13) },
+				{ "BSImagespaceShaderBlur15",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur15) },
+				{ "BSImagespaceShaderBrightPassBlur3",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur3) },
+				{ "BSImagespaceShaderBrightPassBlur5",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur5) },
+				{ "BSImagespaceShaderBrightPassBlur7",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur7) },
+				{ "BSImagespaceShaderBrightPassBlur9",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur9) },
+				{ "BSImagespaceShaderBrightPassBlur11",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur11) },
+				{ "BSImagespaceShaderBrightPassBlur13",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur13) },
+				{ "BSImagespaceShaderBrightPassBlur15",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur15) },
+				{ "BSImagespaceShaderNonHDRBlur3",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur3) },
+				{ "BSImagespaceShaderNonHDRBlur5",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur5) },
+				{ "BSImagespaceShaderNonHDRBlur7",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur7) },
+				{ "BSImagespaceShaderNonHDRBlur9",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur9) },
+				{ "BSImagespaceShaderNonHDRBlur11",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur11) },
+				{ "BSImagespaceShaderNonHDRBlur13",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur13) },
+				{ "BSImagespaceShaderNonHDRBlur15",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur15) },
+				{ "BSImagespaceShaderISBasicCopy",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBasicCopy) },
+				{ "BSImagespaceShaderISSimpleColor",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISSimpleColor) },
+				{ "BSImagespaceShaderApplyReflections",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISApplyReflections) },
+				{ "BSImagespaceShaderISExp",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISExp) },
+				{ "BSImagespaceShaderISDisplayDepth",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISDisplayDepth) },
+				{ "BSImagespaceShaderAlphaBlend",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISAlphaBlend) },
+				{ "BSImagespaceShaderWaterFlow",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterFlow) },
+				{ "BSImagespaceShaderISWaterBlend",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterBlend) },
+			};
+
+			auto it = descriptors.find(imagespaceShader.name.c_str());
+			if (it == descriptors.cend())
+			{
+				return std::numeric_limits<uint32_t>::max();
+			}
+			return it->second;
 		}
 	}
 
 	RE::BSGraphics::VertexShader* ShaderCache::GetVertexShader(const RE::BSShader& shader,
-		uint32_t descriptor)
+		uint32_t rawDescriptor)
 	{
-		if (!SShaderCache::IsSupportedShader(shader))
+		uint32_t descriptor = rawDescriptor;
+		if (shader.shaderType == RE::BSShader::Type::ImageSpace)
+		{
+			descriptor = SShaderCache::GetImagespaceShaderDescriptor(
+				static_cast<const RE::BSImagespaceShader&>(shader));
+		}
+
+		if (!SShaderCache::IsSupportedShader(shader, descriptor))
 		{
 			return nullptr;
 		}
@@ -1317,9 +1538,16 @@ namespace SIE
 	}
 
 	RE::BSGraphics::PixelShader* ShaderCache::GetPixelShader(const RE::BSShader& shader,
-		uint32_t descriptor)
+		uint32_t rawDescriptor)
 	{
-		if (!SShaderCache::IsSupportedShader(shader))
+		uint32_t descriptor = rawDescriptor;
+		if (shader.shaderType == RE::BSShader::Type::ImageSpace)
+		{
+			descriptor = SShaderCache::GetImagespaceShaderDescriptor(
+				static_cast<const RE::BSImagespaceShader&>(shader));
+		}
+
+		if (!SShaderCache::IsSupportedShader(shader, descriptor))
 		{
 			return nullptr;
 		}
@@ -1412,7 +1640,7 @@ namespace SIE
 
 	ShaderCache::ShaderCache() 
 	{
-		static const auto compilationThreadCount = max(1, (static_cast<int32_t>(std::thread::hardware_concurrency()) - 4));
+		static const auto compilationThreadCount = std::max(1, (static_cast<int32_t>(std::thread::hardware_concurrency()) - 4));
 		for (size_t threadIndex = 0; threadIndex < compilationThreadCount; ++threadIndex)
 		{
 			compilationThreads.push_back(std::jthread(&ShaderCache::ProcessCompilationSet, this));
@@ -1427,7 +1655,7 @@ namespace SIE
 		{
 			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
 
-			auto newShader = SShaderCache::CreateVertexShader(*shaderBlob, shader.shaderType.get(),
+			auto newShader = SShaderCache::CreateVertexShader(*shaderBlob, shader,
 				descriptor);
 
 			std::lock_guard lockGuard(vertexShadersMutex);
@@ -1461,7 +1689,7 @@ namespace SIE
 		{
 			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
 
-			auto newShader = SShaderCache::CreatePixelShader(*shaderBlob, shader.shaderType.get(),
+			auto newShader = SShaderCache::CreatePixelShader(*shaderBlob, shader,
 				descriptor);
 
 			std::lock_guard lockGuard(pixelShadersMutex);
