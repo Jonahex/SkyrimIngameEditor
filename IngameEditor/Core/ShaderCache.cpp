@@ -679,6 +679,27 @@ namespace SIE
 				defines[0] = { "TEXTURE_MASK", nullptr };
 				++defines;
 			}
+			else if (descriptor == static_cast<uint32_t>(
+							 RE::ImageSpaceEffectManager::EffectType::ISCompositeLensFlare))
+			{
+				defines[0] = { "VOLUMETRIC_LIGHTING", nullptr };
+				++defines;
+			}
+			else if (descriptor ==
+						 static_cast<uint32_t>(
+							 RE::ImageSpaceEffectManager::EffectType::ISCompositeVolumetricLighting))
+			{
+				defines[0] = { "LENS_FLARE", nullptr };
+				++defines;
+			}
+			else if (descriptor == static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::
+										   ISCompositeLensFlareVolumetricLighting))
+			{
+				defines[0] = { "VOLUMETRIC_LIGHTING", nullptr };
+				++defines;
+				defines[0] = { "LENS_FLARE", nullptr };
+				++defines;
+			}
 			defines[0] = { nullptr, nullptr };
 		}
 
@@ -1526,6 +1547,15 @@ namespace SIE
 				{ "BSImagespaceShaderCopyDynamicFetchDisabled",
 					static_cast<uint32_t>(
 						RE::ImageSpaceEffectManager::EffectType::ISCopyDynamicFetchDisabled) },
+				{ "BSImagespaceShaderISCompositeVolumetricLighting",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISCompositeVolumetricLighting) },
+				{ "BSImagespaceShaderISCompositeLensFlare",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISCompositeLensFlare) },
+				{ "BSImagespaceShaderISCompositeLensFlareVolumetricLighting",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::
+							ISCompositeLensFlareVolumetricLighting) },
 			};
 
 			auto it = descriptors.find(imagespaceShader.name.c_str());
