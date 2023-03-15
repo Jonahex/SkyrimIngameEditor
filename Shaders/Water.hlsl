@@ -246,8 +246,8 @@ Texture2D<float4> RawSSRReflectionTex           : register(t11);
 
 cbuffer PerTechnique                            : register(b0)
 {
-	float4 VPOSOffset					        : packoffset(c0);
-	float4 PosAdjust					        : packoffset(c1);
+	float4 VPOSOffset					        : packoffset(c0); // inverse main render target width and height in xy, 0 in zw
+	float4 PosAdjust					        : packoffset(c1); // inverse framebuffer range in w
 	float4 CameraData					        : packoffset(c2);
 	float4 SunDir						        : packoffset(c3);
 	float4 SunColor						        : packoffset(c4);
@@ -258,17 +258,17 @@ cbuffer PerMaterial                             : register(b1)
 	float4 ShallowColor					        : packoffset(c0);
 	float4 DeepColor					        : packoffset(c1);
 	float4 ReflectionColor				        : packoffset(c2);
-	float4 FresnelRI					        : packoffset(c3);
-	float4 BlendRadius					        : packoffset(c4);
-	float4 VarAmounts					        : packoffset(c5);
+	float4 FresnelRI					        : packoffset(c3); // Fresnel amount in x, specular power in z
+	float4 BlendRadius					        : packoffset(c4); // flowmap scale in y, specular radius in z
+	float4 VarAmounts					        : packoffset(c5); // Sun specular power in x, reflection amount in y, alpha in z, refraction magnitude in w
 	float4 NormalsAmplitude				        : packoffset(c6);
-	float4 WaterParams					        : packoffset(c7);
-	float4 FogNearColor					        : packoffset(c8);
+	float4 WaterParams					        : packoffset(c7); // noise falloff in x, reflection magnitude in y, sun sparkle power in z, framebuffer range in w
+	float4 FogNearColor					        : packoffset(c8); // above water fog amount in w
 	float4 FogFarColor					        : packoffset(c9);
-	float4 FogParam						        : packoffset(c10);
-	float4 DepthControl					        : packoffset(c11);
-	float4 SSRParams					        : packoffset(c12);
-	float4 SSRParams2					        : packoffset(c13);
+	float4 FogParam						        : packoffset(c10); // above water fog distance far in z, above water fog range in w
+	float4 DepthControl					        : packoffset(c11); // depth reflections factor in x, depth refractions factor in y, depth normals factor in z, depth specular lighting factor in w
+	float4 SSRParams					        : packoffset(c12); // fWaterSSRIntensity in x, fWaterSSRBlurAmount in y, inverse main render target width and height in zw
+	float4 SSRParams2					        : packoffset(c13); // fWaterSSRNormalPerturbationScale in x
 }
 
 cbuffer PerGeometry                             : register(b2)
@@ -280,6 +280,7 @@ cbuffer PerGeometry                             : register(b2)
 	float4 LightColor[8]						: packoffset(c14);
 }
 
+#if defined(SIMPLE) || defined(UNDERWATER) || defined(LOD) || defined(SPECULAR)
 #if defined(FLOWMAP)
 float3 GetFlowmapNormal(PS_INPUT input, float2 uvShift, float multiplier, float offset)
 {
@@ -294,53 +295,8 @@ float3 GetFlowmapNormal(PS_INPUT input, float2 uvShift, float multiplier, float 
 }
 #endif
 
-PS_OUTPUT main(PS_INPUT input)
+float3 GetWaterNormal(PS_INPUT input, float distanceFactor, float normalsDepthFactor)
 {
-	PS_OUTPUT psout;
-
-#if defined(SIMPLE) || defined(UNDERWATER) || defined(LOD) || defined(SPECULAR)
-	float3 viewDirection = normalize(input.WPosition.xyz);
-
-    float distanceFraction = saturate(lerp(FrameParams.w, 1, (input.WPosition.w - 8192) / (WaterParams.x - 8192)));
-	float4 distanceMul0 = saturate(lerp(VarAmounts.z, 1, -(distanceFraction - 1))).xxxx;
-
-	bool isSpecular = false;
-
-#if defined(DEPTH)
-#if defined(VERTEX_ALPHA_DEPTH)
-	distanceMul0 = 0;
-#else
-	float depth = DepthTex
-	                  .Load(float3(DynamicResolutionParams1.xy *
-									   (DynamicResolutionParams2.xy * input.HPosition.xy),
-						  0))
-	                  .x;
-	float cameraDepth = (CameraData.w / (-depth * CameraData.z + CameraData.x));
-	float2 depthOffset =
-		DynamicResolutionParams2.xy * input.HPosition.xy * VPOSOffset.xy + VPOSOffset.zw;
-	float depthMul = length(float3(cameraDepth * (depthOffset * 2 - 1) / ProjData.xy, cameraDepth));
-
-	float3 depthAdjustedViewDirection = -viewDirection * depthMul;
-	float viewSurfaceAngle = dot(depthAdjustedViewDirection, ReflectPlane.xyz);
-
-	float planeMul = (1 - ReflectPlane.w / viewSurfaceAngle);
-	distanceMul0 = float4(saturate((planeMul * length(depthAdjustedViewDirection)) / FogParam.z), 0,
-		saturate((planeMul * abs(viewSurfaceAngle)) / FogParam.z).xx);
-#endif
-#endif
-
-	float4 distanceMul = distanceMul0 - 1;
-
-#if defined(UNDERWATER)
-	float4 depthControl = float4(0, 1, 0, 0);
-#elif defined(LOD)
-	float4 depthControl = float4(1, 0, 0, 1);
-#elif defined(SPECULAR) && (NUM_SPECULAR_LIGHTS != 0)
-	float4 depthControl = float4(0, 0, 1, 0);
-#else
-	float4 depthControl = DepthControl * distanceMul + 1;
-#endif
-
 #if defined(FLOWMAP)
 	float2 normalMul =
 		0.5 + -(-0.5 + abs(frac(input.TexCoord2.zw * (64 * input.TexCoord4)) * 2 - 1));
@@ -358,38 +314,37 @@ PS_OUTPUT main(PS_INPUT input)
 	float2 flowmapDenominator = sqrt(normalMul * normalMul + (1 - normalMul) * (1 - normalMul));
 	float3 flowmapNormal =
 		float3(((-0.5 + flowmapNormalWeighted) / (flowmapDenominator.x * flowmapDenominator.y)) *
-				   max(0.4, depthControl.z),
+				   max(0.4, normalsDepthFactor),
 			0);
 	flowmapNormal.z =
 		sqrt(1 - flowmapNormal.x * flowmapNormal.x - flowmapNormal.y * flowmapNormal.y);
 #endif
 
-	float3 normals1 = Normals01Tex.Sample(Normals01Sampler, input.TexCoord1.xy).xyz * 2.0.xxx +
+	float3 normals1 = Normals01Tex.Sample(Normals01Sampler, input.TexCoord1.xy).xyz * 2.0 +
 	                  float3(-1, -1, -2);
 
 #if defined (FLOWMAP) && !defined(BLEND_NORMALS)
 	float3 finalNormal =
-		normalize(lerp(normals1 + float3(0, 0, 1), flowmapNormal, distanceFraction));
+		normalize(lerp(normals1 + float3(0, 0, 1), flowmapNormal, distanceFactor));
 #elif !defined(LOD)
 	float3 normals2 =
-		Normals02Tex.Sample(Normals02Sampler, input.TexCoord1.zw).xyz * 2.0.xxx - 1.0.xxx;
+		Normals02Tex.Sample(Normals02Sampler, input.TexCoord1.zw).xyz * 2.0 - 1.0;
 	float3 normals3 =
-		Normals03Tex.Sample(Normals03Sampler, input.TexCoord2.xy).xyz * 2.0.xxx - 1.0.xxx;
+		Normals03Tex.Sample(Normals03Sampler, input.TexCoord2.xy).xyz * 2.0 - 1.0;
 
-	float3 blendedNormal =
-		normalize(float3(0, 0, 1) + NormalsAmplitude.xxx * normals1 +
-				  NormalsAmplitude.yyy * normals2 + NormalsAmplitude.zzz * normals3);
+	float3 blendedNormal = normalize(float3(0, 0, 1) + NormalsAmplitude.x * normals1 +
+									 NormalsAmplitude.y * normals2 + NormalsAmplitude.z * normals3);
 #if defined (UNDERWATER)
 	float3 finalNormal = blendedNormal;
 #else
-	float3 finalNormal = normalize(lerp(float3(0, 0, 1), blendedNormal, depthControl.zzz));
+	float3 finalNormal = normalize(lerp(float3(0, 0, 1), blendedNormal, normalsDepthFactor));
 #endif
 
 #if defined(FLOWMAP)
 	float normalBlendFactor =
 		normalMul.y * ((1 - normalMul.x) * flowmapNormal3.z + normalMul.x * flowmapNormal2.z) +
 		(1 - normalMul.y) * (normalMul.x * flowmapNormal1.z + (1 - normalMul.x) * flowmapNormal0.z);
-	finalNormal = normalize(lerp(normals1 + float3(0, 0, 1), normalize(lerp(finalNormal, flowmapNormal, normalBlendFactor)), distanceFraction));
+	finalNormal = normalize(lerp(normals1 + float3(0, 0, 1), normalize(lerp(finalNormal, flowmapNormal, normalBlendFactor)), distanceFactor));
 #endif
 #else
 	float3 finalNormal =
@@ -402,56 +357,204 @@ PS_OUTPUT main(PS_INPUT input)
 #else
 	float2 displacementUv = input.TexCoord3.xy;
 #endif
-	float3 displacement = normalize(float3(NormalsAmplitude.ww * (-0.5.xx + DisplacementTex.Sample(DisplacementSampler, displacementUv).zw),
+	float3 displacement = normalize(float3(NormalsAmplitude.w * (-0.5 + DisplacementTex.Sample(DisplacementSampler, displacementUv).zw),
 			0.04));
-	finalNormal = lerp(displacement, finalNormal, displacement.zzz);
+	finalNormal = lerp(displacement, finalNormal, displacement.z);
 #endif
-	
+
+	return finalNormal;
+}
+
+float3 GetReflectedVector(float3 incidentVector, float3 normal)
+{
+	return normal * -(dot(incidentVector, normal) * 2) + incidentVector;
+}
+
+float3 GetWaterSpecularColor(PS_INPUT input, float3 normal, float3 viewDirection,
+	float distanceFactor, float refractionsDepthFactor)
+{
 #if defined(REFLECTIONS)
 	float3 finalSsrReflectionColor = 0.0.xxx;
 	float ssrFraction = 0;
+
 #if defined(CUBEMAP)
-#if NUM_SPECULAR_LIGHTS == 0
-	float2 ssrReflectionUv = GetDynamicResolutionAdjustedScreenPosition(
-		(DynamicResolutionParams2.xy * input.HPosition.xy) * SSRParams.zw +
-		SSRParams2.x * finalNormal.xy);
-	float4 ssrReflectionColor1 = SSRReflectionTex.Sample(SSRReflectionSampler, ssrReflectionUv);
-	float4 SsrReflectionColor2 = RawSSRReflectionTex.Sample(RawSSRReflectionSampler, ssrReflectionUv);
-	float4 ssrReflectionColor = lerp(SsrReflectionColor2, ssrReflectionColor1, SSRParams.y);
-
-	finalSsrReflectionColor = ssrReflectionColor.xyz;
-	ssrFraction = saturate(ssrReflectionColor.w * (SSRParams.x * distanceFraction));
-#endif
-
-	precise float3 normalOffset = float3(0, 0, 1 - WaterParams.y);
-	float3 viewNormal = WaterParams.yyy * finalNormal + normalOffset;
-	float3 cubemapUV = viewNormal * -(dot(viewDirection, viewNormal) * 2).xxx + viewDirection;
+	float3 cubemapUV =
+		GetReflectedVector(viewDirection, WaterParams.y * normal + float3(0, 0, 1 - WaterParams.y));
 	float3 reflectionColor = CubeMapTex.Sample(CubeMapSampler, cubemapUV).xyz;
 #else
+
 #if NUM_SPECULAR_LIGHTS == 0
-	float4 reflectionNormalRaw = float4((VarAmounts.w * depthControl.y) * finalNormal.xy + input.MPosition.xy, input.MPosition.z, 1);
+	float4 reflectionNormalRaw =
+		float4((VarAmounts.w * refractionsDepthFactor) * normal.xy + input.MPosition.xy,
+			input.MPosition.z, 1);
 #else
-	float4 reflectionNormalRaw = float4(VarAmounts.ww * finalNormal.xy, reflectionNormalZ, 1);
+	float4 reflectionNormalRaw = float4(VarAmounts.w * normal.xy, reflectionNormalZ, 1);
 #endif
+
 	float4 reflectionNormal = mul(transpose(TextureProj), reflectionNormalRaw);
 	float3 reflectionColor =
 		ReflectionTex.Sample(ReflectionSampler, reflectionNormal.xy / reflectionNormal.ww).xyz;
 #endif
-	float3 finalReflectionColor =
-		lerp(reflectionColor * WaterParams.www, finalSsrReflectionColor, ssrFraction);
 
-	float3 specularColor =
-		VarAmounts.yyy * (finalReflectionColor - ReflectionColor.xyz) + ReflectionColor.xyz;
+#if defined(CUBEMAP) && NUM_SPECULAR_LIGHTS == 0
+	float2 ssrReflectionUv = GetDynamicResolutionAdjustedScreenPosition(
+		(DynamicResolutionParams2.xy * input.HPosition.xy) * SSRParams.zw +
+		SSRParams2.x * normal.xy);
+	float4 ssrReflectionColor1 = SSRReflectionTex.Sample(SSRReflectionSampler, ssrReflectionUv);
+	float4 ssrReflectionColor2 = RawSSRReflectionTex.Sample(RawSSRReflectionSampler, ssrReflectionUv);
+	float4 ssrReflectionColor = lerp(ssrReflectionColor2, ssrReflectionColor1, SSRParams.y);
+
+	finalSsrReflectionColor = ssrReflectionColor.xyz;
+	ssrFraction = saturate(ssrReflectionColor.w * (SSRParams.x * distanceFactor));
+#endif
+
+	float3 finalReflectionColor =
+		lerp(reflectionColor * WaterParams.w, finalSsrReflectionColor, ssrFraction);
+	return lerp(ReflectionColor.xyz, finalReflectionColor, VarAmounts.y);
 #else
-	float3 specularColor = ReflectionColor.xyz * VarAmounts.yyy;
+
+	return ReflectionColor.xyz * VarAmounts.y;
+#endif
+}
+
+#if defined(DEPTH)
+float GetScreenDepth(float2 screenPosition)
+{
+	float depth = DepthTex.Load(float3(screenPosition, 0)).x;
+	return (CameraData.w / (-depth * CameraData.z + CameraData.x));
+}
+#endif
+
+float3 GetLdotN(float3 normal)
+{
+#if defined(INTERIOR) || defined(UNDERWATER)
+	return 1;
+#else
+	return saturate(dot(SunDir.xyz, normal));
+#endif
+}
+
+float GetFresnelValue(float3 normal, float3 viewDirection)
+{
+#if defined(UNDERWATER)
+	float3 actualNormal = -normal;
+#else
+	float3 actualNormal = normal;
+#endif
+	float viewAngle = 1 - saturate(dot(-viewDirection, actualNormal));
+	return (1 - FresnelRI.x) * pow(viewAngle, 5) + FresnelRI.x;
+}
+
+float3 GetWaterDiffuseColor(PS_INPUT input, float3 normal, float3 viewDirection,
+	float4 distanceMul, float refractionsDepthFactor, float fresnel)
+{
+#if defined(REFRACTIONS)
+	float4 refractionNormal = mul(transpose(TextureProj),
+		float4((VarAmounts.w * refractionsDepthFactor).xx * normal.xy + input.MPosition.xy,
+			input.MPosition.z, 1));
+
+	float2 refractionUvRaw =
+		float2(refractionNormal.x, refractionNormal.w - refractionNormal.y) / refractionNormal.ww;
+
+#if defined(DEPTH)
+	float depth = GetScreenDepth(DynamicResolutionParams1.xy * (DynamicResolutionParams2.xy * input.HPosition.xy));
+	float refractionDepth =
+		GetScreenDepth(DynamicResolutionParams1.xy * (refractionUvRaw / VPOSOffset.xy));
+	float refractionDepthMul = length(
+		float3((refractionDepth * ((VPOSOffset.zw + refractionUvRaw / VPOSOffset.xy) * 2 - 1)) /
+				   ProjData.xy,
+			depth));
+
+	float3 refractionDepthAdjustedViewDirection = -viewDirection * refractionDepthMul;
+	float refractionViewSurfaceAngle = dot(refractionDepthAdjustedViewDirection, ReflectPlane.xyz);
+
+	float refractionPlaneMul =
+		sign(refractionViewSurfaceAngle) * (1 - ReflectPlane.w / refractionViewSurfaceAngle);
+
+	if (refractionPlaneMul < 0)
+	{
+		refractionUvRaw =
+			DynamicResolutionParams2.xy * input.HPosition.xy * VPOSOffset.xy + VPOSOffset.zw;
+	}
+#endif
+
+	float2 refractionUV = GetDynamicResolutionAdjustedScreenPosition(refractionUvRaw);
+	float3 refractionColor = RefractionTex.Sample(RefractionSampler, refractionUV).xyz;
+	float3 refractionDiffuseColor = lerp(ShallowColor.xyz, DeepColor.xyz, distanceMul.y);
+#if defined (UNDERWATER)
+	float refractionMul = 0;
+#else
+	float refractionMul =
+		1 - exp2(FogNearColor.w *
+				 log2(saturate((-distanceMul.x * FogParam.z + FogParam.z) / FogParam.w)));
+#endif
+	return lerp(refractionColor * WaterParams.w, refractionDiffuseColor, refractionMul);
+#else
+	return lerp(ShallowColor.xyz, DeepColor.xyz, fresnel) * GetLdotN(normal);
+#endif
+}
+
+float3 GetSunColor(float3 normal, float3 viewDirection)
+{
+#if defined(INTERIOR) || defined(UNDERWATER)
+	return 0.0.xxx;
+#else
+	float3 reflectionDirection = GetReflectedVector(viewDirection, normal);
+
+	float reflectionMul = exp2(VarAmounts.x * log2(saturate(dot(reflectionDirection, SunDir.xyz))));
+
+	float3 sunDirection = SunColor.xyz * SunDir.w;
+	float sunMul = exp2(ShallowColor.w * log2(saturate(dot(normal, float3(-0.099, -0.099, 0.99)))));
+	return (reflectionMul * sunDirection) * DeepColor.w + WaterParams.z * (sunMul * sunDirection);
+#endif
+}
+#endif
+
+PS_OUTPUT main(PS_INPUT input)
+{
+	PS_OUTPUT psout;
+
+#if defined(SIMPLE) || defined(UNDERWATER) || defined(LOD) || defined(SPECULAR)
+	float3 viewDirection = normalize(input.WPosition.xyz);
+
+    float distanceFactor = saturate(lerp(FrameParams.w, 1, (input.WPosition.w - 8192) / (WaterParams.x - 8192)));
+	float4 distanceMul = saturate(lerp(VarAmounts.z, 1, -(distanceFactor - 1))).xxxx;
+
+	bool isSpecular = false;
+
+#if defined(DEPTH)
+#if defined(VERTEX_ALPHA_DEPTH)
+	distanceMul = 0;
+#else
+	float depth = GetScreenDepth(
+		DynamicResolutionParams1.xy * (DynamicResolutionParams2.xy * input.HPosition.xy));
+	float2 depthOffset =
+		DynamicResolutionParams2.xy * input.HPosition.xy * VPOSOffset.xy + VPOSOffset.zw;
+	float depthMul = length(float3((depthOffset * 2 - 1) * depth / ProjData.xy, depth));
+
+	float3 depthAdjustedViewDirection = -viewDirection * depthMul;
+	float viewSurfaceAngle = dot(depthAdjustedViewDirection, ReflectPlane.xyz);
+
+	float planeMul = (1 - ReflectPlane.w / viewSurfaceAngle);
+	distanceMul = saturate(
+		planeMul * float4(length(depthAdjustedViewDirection).xx, abs(viewSurfaceAngle).xx) /
+		FogParam.z);
+#endif
 #endif
 
 #if defined(UNDERWATER)
-	float viewAngle = 1 - saturate(dot(-viewDirection, -finalNormal));
+	float4 depthControl = float4(0, 1, 0, 0);
+#elif defined(LOD)
+	float4 depthControl = float4(1, 0, 0, 1);
+#elif defined(SPECULAR) && (NUM_SPECULAR_LIGHTS != 0)
+	float4 depthControl = float4(0, 0, 1, 0);
 #else
-	float viewAngle = 1 - saturate(dot(-viewDirection, finalNormal));
+	float4 depthControl = DepthControl * (distanceMul - 1) + 1;
 #endif
-	float shallowFraction = (1 - FresnelRI.x) * pow(viewAngle, 5) + FresnelRI.x;
+
+	float3 normal = GetWaterNormal(input, distanceFactor, depthControl.z);
+	
+	float fresnel = GetFresnelValue(normal, viewDirection);
 
 #if defined(SPECULAR) && (NUM_SPECULAR_LIGHTS != 0)
 	float3 finalColor = 0.0.xxx;
@@ -462,94 +565,37 @@ PS_OUTPUT main(PS_INPUT input)
 		float3 lightDirection = normalize(normalize(lightVector) - viewDirection);
 		float lightFade = saturate(length(lightVector) / LightPos[lightIndex].w);
 		float lightColorMul = (1 - lightFade * lightFade);
-		float LdotN = saturate(dot(lightDirection, finalNormal));
+		float LdotN = saturate(dot(lightDirection, normal));
 		float3 lightColor = (LightColor[lightIndex].xyz * exp2(FresnelRI.z * log2(LdotN))) * lightColorMul;
 		finalColor += lightColor;
 	}
 
-	finalColor *= shallowFraction;
+	finalColor *= fresnel;
 
 	isSpecular = true;
 #else
 
-#if defined(INTERIOR) || defined(UNDERWATER)
-	float LdotN = 1;
-	float3 sunColor = 0.0.xxx;
-#else
-	float VdotN = dot(viewDirection, finalNormal);
-	float3 reflectionDirection = finalNormal * -(VdotN * 2).xxx + viewDirection;
-
-	float refelectionMul = exp2(VarAmounts.x * log2(saturate(dot(reflectionDirection, SunDir.xyz))));
-
-    float3 sunDirection = SunColor.xyz * SunDir.www;
-	float LdotN = saturate(dot(SunDir.xyz, finalNormal));
-	float sunMul = exp2(ShallowColor.w * log2(saturate(dot(finalNormal, float3(-0.099, -0.099, 0.99)))));
-	float3 sunColor = (refelectionMul.xxx * sunDirection) * DeepColor.www +
-	                  WaterParams.zzz * (sunMul.xxx * sunDirection);
-#endif
-
-#if defined(REFRACTIONS)
-	float4 refractionNormal = mul(transpose(TextureProj),
-		float4((VarAmounts.w * depthControl.y).xx * finalNormal.xy + input.MPosition.xy,
-			input.MPosition.z, 1));
-
-	float2 refractionUvRaw =
-		float2(refractionNormal.x, refractionNormal.w - refractionNormal.y) / refractionNormal.ww;
-
-#if defined(DEPTH)
-	float refractionDepth =
-		DepthTex.Load(float3(DynamicResolutionParams1.xy * (refractionUvRaw / VPOSOffset.xy), 0)).x;
-
-	float refractionCameraDepth = (CameraData.w / (-refractionDepth * CameraData.z + CameraData.x));
-	float refractionDepthMul = length(float3(
-		(refractionCameraDepth *
-			((VPOSOffset.zw + refractionUvRaw / VPOSOffset.xy) * 2 - 1)) /
-			ProjData.xy,
-		cameraDepth));
-
-	float3 refractionDepthAdjustedViewDirection = -viewDirection * refractionDepthMul;
-	float refractionViewSurfaceAngle = dot(refractionDepthAdjustedViewDirection, ReflectPlane.xyz);
-
-	float refractionPlaneMul =
-		sign(refractionViewSurfaceAngle) * (1 - ReflectPlane.w / refractionViewSurfaceAngle);
-
-	if (refractionPlaneMul < 0)
-	{
-		refractionUvRaw = depthOffset;
-	}
-#endif
-
-	float2 refractionUV = GetDynamicResolutionAdjustedScreenPosition(refractionUvRaw);
-	float3 refractionColor = RefractionTex.Sample(RefractionSampler, refractionUV).xyz;
-	float3 refractionDiffuseColor = lerp(ShallowColor.xyz, DeepColor.xyz, distanceMul0.xyz);
-#if defined (UNDERWATER)
-	float refractionMul = 0;
-#else
-	float refractionMul =
-		1 - exp2(FogNearColor.w *
-				 log2(saturate((-distanceMul0.x * FogParam.z + FogParam.z) / FogParam.w)));
-#endif
+	float3 specularColor =
+		GetWaterSpecularColor(input, normal, viewDirection, distanceFactor, depthControl.y);
 	float3 diffuseColor =
-		lerp(refractionColor * WaterParams.w, refractionDiffuseColor, refractionMul);
-#else
-	float3 diffuseColor = lerp(ShallowColor.xyz, DeepColor.xyz, shallowFraction.xxx) * LdotN.xxx;
-#endif
+		GetWaterDiffuseColor(input, normal, viewDirection, distanceMul, depthControl.y, fresnel);
 
 #if defined (UNDERWATER)
 	float3 finalSpecularColor = lerp(ShallowColor.xyz, specularColor, 0.5);
 	float3 finalColor = saturate(1 - input.WPosition.w * 0.002) *
-	                        ((1 - shallowFraction) * (diffuseColor - finalSpecularColor)) +
+	                        ((1 - fresnel) * (diffuseColor - finalSpecularColor)) +
 	                    finalSpecularColor;
 #else
-	float diffuseFraction = distanceFraction * (shallowFraction * depthControl.x - 1) + 1;
+	float3 sunColor = GetSunColor(normal, viewDirection);
+	float specularFraction = lerp(1, fresnel * depthControl.x, distanceFactor);
 
 	float3 finalColorPreFog =
-		lerp(diffuseColor, specularColor, diffuseFraction.xxx) + sunColor * depthControl.www;
-	float3 finalColor = lerp(finalColorPreFog, input.FogParam.xyz, input.FogParam.www);
+		lerp(diffuseColor, specularColor, specularFraction) + sunColor * depthControl.w;
+	float3 finalColor = lerp(finalColorPreFog, input.FogParam.xyz, input.FogParam.w);
 #endif
 #endif
 
-	psout.Lighting = saturate(float4(finalColor * PosAdjust.www, isSpecular));
+	psout.Lighting = saturate(float4(finalColor * PosAdjust.w, isSpecular));
 #endif
 
 #if defined(STENCIL)    
