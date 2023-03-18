@@ -761,6 +761,16 @@ namespace SIE
 					++defines;
 				}
 			}
+			else if (descEnum == ISLightingCompositeMenu)
+			{
+				defines[0] = { "MENU", nullptr };
+				++defines;
+			}
+			else if (descEnum == ISLightingCompositeNoDirectionalLight)
+			{
+				defines[0] = { "NO_DIRECTIONAL_LIGHT", nullptr };
+				++defines;
+			}
 			defines[0] = { nullptr, nullptr };
 		}
 
@@ -1704,6 +1714,20 @@ namespace SIE
 				{ "BSImagespaceShaderHDRTonemapBlendCinematicFade",
 					static_cast<uint32_t>(
 						RE::ImageSpaceEffectManager::EffectType::ISHDRTonemapBlendCinematicFade) },
+				{ "BSImagespaceShaderISIBLensFlares",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISIBLensFlares) },
+				{ "BSImagespaceShaderISLightingComposite",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISLightingComposite) },
+				{ "BSImagespaceShaderISLightingCompositeMenu",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISLightingCompositeMenu) },
+				{ "BSImagespaceShaderISLightingCompositeNoDirectionalLight",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::
+							ISLightingCompositeNoDirectionalLight) },
+				{ "BSImagespaceShaderLocalMap",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISLocalMap) },
 			};
 
 			auto it = descriptors.find(imagespaceShader.name.c_str());
