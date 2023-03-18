@@ -771,6 +771,46 @@ namespace SIE
 				defines[0] = { "NO_DIRECTIONAL_LIGHT", nullptr };
 				++defines;
 			}
+			else if (descEnum == ISWaterBlendHeightmaps)
+			{
+				defines[0] = { "BLEND_HEIGHTMAPS", nullptr };
+				++defines;
+			}
+			else if (descEnum == ISWaterDisplacementClearSimulation)
+			{
+				defines[0] = { "CLEAR_SIMULATION", nullptr };
+				++defines;
+			}
+			else if (descEnum == ISWaterDisplacementNormals)
+			{
+				defines[0] = { "NORMALS", nullptr };
+				++defines;
+			}
+			else if (descEnum == ISWaterDisplacementRainRipple)
+			{
+				defines[0] = { "RAIN_RIPPLE", nullptr };
+				++defines;
+			}
+			else if (descEnum == ISWaterDisplacementTexOffset)
+			{
+				defines[0] = { "TEX_OFFSET", nullptr };
+				++defines;
+			}
+			else if (descEnum == ISWaterSmoothHeightmap)
+			{
+				defines[0] = { "SMOOTH_HEIGHTMAP", nullptr };
+				++defines;
+			}
+			else if (descEnum == ISWaterRainHeightmap)
+			{
+				defines[0] = { "RAIN_HEIGHTMAP", nullptr };
+				++defines;
+			}
+			else if (descEnum == ISWaterWadingHeightmap)
+			{
+				defines[0] = { "WADING_HEIGHTMAP", nullptr };
+				++defines;
+			}
 			defines[0] = { nullptr, nullptr };
 		}
 
@@ -1728,6 +1768,25 @@ namespace SIE
 							ISLightingCompositeNoDirectionalLight) },
 				{ "BSImagespaceShaderLocalMap",
 					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISLocalMap) },
+				{ "BSISWaterBlendHeightmaps",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterBlendHeightmaps) },
+				{ "BSISWaterDisplacementClearSimulation",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterDisplacementClearSimulation) },
+				{ "BSISWaterDisplacementNormals",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterDisplacementNormals) },
+				{ "BSISWaterDisplacementRainRipple",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterDisplacementRainRipple) },
+				{ "BSISWaterDisplacementTexOffset",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISWaterDisplacementTexOffset) },
+				{ "BSISWaterWadingHeightmap",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterWadingHeightmap) },
+				{ "BSISWaterRainHeightmap",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterRainHeightmap) },
+				{ "BSISWaterSmoothHeightmap",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterSmoothHeightmap) },
+				{ "BSISWaterWadingHeightmap",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterWadingHeightmap) },
 			};
 
 			auto it = descriptors.find(imagespaceShader.name.c_str());
