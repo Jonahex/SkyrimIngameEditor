@@ -73,17 +73,15 @@ PS_OUTPUT main(PS_INPUT input)
 	dofParams2 = lerp(params2, params7, mask);
 #endif
 
+	float2 dofBlurRange = float2(dofParams2.x, dofParams.x);
 	float focusDistance = dofParams.y;
-	float dofBlur = dofParams2.x;
-	float dofRange = dofParams.x;
 	
 #if !defined(MASKED)
 	if (params3.z > 0)
 	{
 		focusDistance = AvgDepthTex.Sample(AvgDepthSampler, 0).x;
 		float depthFactor = saturate(focusDistance * params3.z - params3.w);
-		dofBlur = lerp(params2.x, params2.w, depthFactor);
-		dofRange = lerp(params.x, params.y, depthFactor);
+		dofBlurRange = lerp(float2(params2.x, params.x), float2(params2.w, params.y), depthFactor);
 	}
 #endif
 
@@ -131,24 +129,24 @@ PS_OUTPUT main(PS_INPUT input)
 
 		float dofStrength = 0;
 #if defined(DISTANT_BLUR)
-		dofStrength = (finalDepth - focusDistance) / dofRange;
+		dofStrength = (finalDepth - focusDistance) / dofBlurRange.y;
 #elif defined(DOF)
 		if ((focusDistance > finalDepth || mask == 0) && dofParams2.y != 0)
 		{
-			dofStrength = (focusDistance - finalDepth) / dofRange;
+			dofStrength = (focusDistance - finalDepth) / dofBlurRange.y;
 		}
 		else if (finalDepth > focusDistance && dofParams2.z != 0)
 		{
-			dofStrength = (finalDepth - focusDistance) / dofRange;
+			dofStrength = (finalDepth - focusDistance) / dofBlurRange.y;
 		}
 #endif
 
-		blurFactor = saturate(dofStrength) * (dofBlur * (1 - 0.5 * crossSection));
+		blurFactor = saturate(dofStrength) * (dofBlurRange.x * (1 - 0.5 * crossSection));
 	}
 
 	float3 finalColor = lerp(imageColor, blurColor, blurFactor);
 #if defined(FOGGED)
-	float fogFactor = (params4.w * saturate((finalDepth - params5.y) / (params5.y - params5.x))) * mask;
+	float fogFactor = (params4.w * saturate((finalDepth - params5.y) / (params5.x - params5.y))) * mask;
 	finalColor = lerp(finalColor, params4.xyz, fogFactor);
 #endif
 

@@ -608,34 +608,28 @@ namespace SIE
 
 		static void GetImagespaceShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
 		{
-			if ((descriptor >=
-						static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur3) &&
-					descriptor <=
-						static_cast<uint32_t>(
-							RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur15)) ||
-				descriptor ==
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur))
+			using enum RE::ImageSpaceEffectManager::EffectType;
+
+			const auto descEnum = static_cast<RE::ImageSpaceEffectManager::EffectType>(descriptor);
+			if ((descriptor >= static_cast<uint32_t>(ISBlur3) &&
+					descriptor <= static_cast<uint32_t>(ISBrightPassBlur15)) ||
+				descEnum == ISBlur)
 			{
-				if (descriptor ==
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur))
+				if (descEnum == ISBlur)
 				{
 					defines[0] = { "BLUR_RADIUS", "0" };
 					++defines;
 				}
 				else
 				{
-					static constexpr std::array<const char*, 7> blurRadiusDefines = { { "3", "5", "7",
-						"9", "11", "13", "15" } };
+					static constexpr std::array<const char*, 7> blurRadiusDefines = { { "3", "5",
+						"7", "9", "11", "13", "15" } };
 					const size_t blurRadius = static_cast<size_t>(
-						(descriptor - static_cast<uint32_t>(
-										  RE::ImageSpaceEffectManager::EffectType::ISBlur3)) %
-						blurRadiusDefines.size());
+						(descriptor - static_cast<uint32_t>(ISBlur3)) % blurRadiusDefines.size());
 					defines[0] = { "BLUR_RADIUS", blurRadiusDefines[blurRadius] };
 					++defines;
 					const size_t blurType = static_cast<size_t>(
-						(descriptor - static_cast<uint32_t>(
-										  RE::ImageSpaceEffectManager::EffectType::ISBlur3)) /
-						blurRadiusDefines.size());
+						(descriptor - static_cast<uint32_t>(ISBlur3)) / blurRadiusDefines.size());
 					if (blurType == 1)
 					{
 						defines[0] = { "BLUR_NON_HDR", nullptr };
@@ -648,69 +642,53 @@ namespace SIE
 					}
 				}
 			}
-			else if (descriptor == static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISDisplayDepth))
+			else if (descEnum == ISDisplayDepth)
 			{
 				defines[0] = { "DISPLAY_DEPTH", nullptr };
 				++defines;
 			}
-			else if (descriptor ==
-					 static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISSimpleColor))
+			else if (descEnum == ISSimpleColor)
 			{
 				defines[0] = { "SIMPLE_COLOR", nullptr };
 				++defines;
 			}
-			else if (descriptor ==
-				static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISCopyDynamicFetchDisabled))
+			else if (descEnum == ISCopyDynamicFetchDisabled)
 			{
 				defines[0] = { "DYNAMIC_FETCH_DISABLED", nullptr };
 				++defines;
 			}
-			else if (descriptor ==
-					 static_cast<uint32_t>(
-						 RE::ImageSpaceEffectManager::EffectType::ISCopyGrayScale))
+			else if (descEnum == ISCopyGrayScale)
 			{
 				defines[0] = { "GRAY_SCALE", nullptr };
 				++defines;
 			}
-			else if (descriptor ==
-					 static_cast<uint32_t>(
-						 RE::ImageSpaceEffectManager::EffectType::ISCopyTextureMask))
+			else if (descEnum == ISCopyTextureMask)
 			{
 				defines[0] = { "TEXTURE_MASK", nullptr };
 				++defines;
 			}
-			else if (descriptor == static_cast<uint32_t>(
-							 RE::ImageSpaceEffectManager::EffectType::ISCompositeLensFlare))
+			else if (descEnum == ISCompositeLensFlare)
 			{
 				defines[0] = { "VOLUMETRIC_LIGHTING", nullptr };
 				++defines;
 			}
-			else if (descriptor ==
-						 static_cast<uint32_t>(
-							 RE::ImageSpaceEffectManager::EffectType::ISCompositeVolumetricLighting))
+			else if (descEnum == ISCompositeVolumetricLighting)
 			{
 				defines[0] = { "LENS_FLARE", nullptr };
 				++defines;
 			}
-			else if (descriptor == static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::
-										   ISCompositeLensFlareVolumetricLighting))
+			else if (descEnum == ISCompositeLensFlareVolumetricLighting)
 			{
 				defines[0] = { "VOLUMETRIC_LIGHTING", nullptr };
 				++defines;
 				defines[0] = { "LENS_FLARE", nullptr };
 				++defines;
 			}
-			else if (descriptor >= static_cast<uint32_t>(
-									   RE::ImageSpaceEffectManager::EffectType::ISDepthOfField) &&
-					 descriptor <=
-						 static_cast<uint32_t>(
-							 RE::ImageSpaceEffectManager::EffectType::ISDistantBlurMaskedFogged))
+			else if (descriptor >= static_cast<uint32_t>(ISDepthOfField) &&
+					 descriptor <= static_cast<uint32_t>(ISDistantBlurMaskedFogged))
 			{
-				if (descriptor >= static_cast<uint32_t>(
-					RE::ImageSpaceEffectManager::EffectType::ISDepthOfField) &&
-					descriptor <=
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISDepthOfFieldMaskedFogged))
+				if (descriptor >= static_cast<uint32_t>(ISDepthOfField) &&
+					descriptor <= static_cast<uint32_t>(ISDepthOfFieldMaskedFogged))
 
 				{
 					defines[0] = { "DOF", nullptr };
@@ -721,30 +699,67 @@ namespace SIE
 					defines[0] = { "DISTANT_BLUR", nullptr };
 					++defines;
 				}
-				if (descriptor != static_cast<uint32_t>(
-					RE::ImageSpaceEffectManager::EffectType::ISDepthOfField) &&
-					descriptor !=
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISDistantBlur))
+				if (descEnum != ISDepthOfField && descEnum != ISDistantBlur)
 				{
 					defines[0] = { "FOGGED", nullptr };
 					++defines;
 				}
-				if (descriptor == static_cast<uint32_t>(
-									  RE::ImageSpaceEffectManager::EffectType::ISDepthOfFieldMaskedFogged) ||
-					descriptor == static_cast<uint32_t>(
-									  RE::ImageSpaceEffectManager::EffectType::ISDistantBlurMaskedFogged))
+				if (descEnum == ISDepthOfFieldMaskedFogged || descEnum == ISDistantBlurMaskedFogged)
 				{
 					defines[0] = { "MASKED", nullptr };
 					++defines;
 				}
 			}
-			else if (descriptor ==
-					 static_cast<uint32_t>(
-						 RE::ImageSpaceEffectManager::EffectType::ISDownsampleIgnoreBrightest))
+			else if (descEnum == ISDownsampleIgnoreBrightest)
 			{
 				defines[0] = { "IGNORE_BRIGHTEST", nullptr };
 				++defines;
+			}
+			else if (descEnum == ISHDRTonemapBlendCinematic)
+			{
+				defines[0] = { "TONEMAP", nullptr };
+				++defines;
+			}
+			else if (descEnum == ISHDRTonemapBlendCinematicFade)
+			{
+				defines[0] = { "TONEMAP", nullptr };
+				++defines;
+				defines[0] = { "FADE", nullptr };
+				++defines;
+			}
+			else if (descriptor >= static_cast<uint32_t>(ISHDRDownSample16) &&
+					 descriptor <= static_cast<uint32_t>(ISHDRDownSample16LightAdapt))
+			{
+				defines[0] = { "DOWNSAMPLE", nullptr };
+				++defines;
+				if (descEnum == ISHDRDownSample16 || descEnum == ISHDRDownSample16Lum ||
+					descEnum == ISHDRDownSample16LightAdapt ||
+					descEnum == ISHDRDownSample16LumClamp)
+				{
+					defines[0] = { "SAMPLES_COUNT", "16" };
+					++defines;
+				}
+				else
+				{
+					defines[0] = { "SAMPLES_COUNT", "4" };
+					++defines;
+				}
+				if (descEnum == ISHDRDownSample4RGB2Lum)
+				{
+					defines[0] = { "RGB2LUM", nullptr };
+					++defines;
+				}
+				else if (descEnum == ISHDRDownSample16Lum || descEnum == ISHDRDownSample16LumClamp)
+				{
+					defines[0] = { "LUM", nullptr };
+					++defines;
+				}
+				else if (descEnum == ISHDRDownSample16LightAdapt ||
+						 descEnum == ISHDRDownSample4LightAdapt)
+				{
+					defines[0] = { "LIGHT_ADAPT", nullptr };
+					++defines;
+				}
 			}
 			defines[0] = { nullptr, nullptr };
 		}
@@ -1659,6 +1674,36 @@ namespace SIE
 				{ "BSImageSpaceShaderVolumetricLighting",
 					static_cast<uint32_t>(
 						RE::ImageSpaceEffectManager::EffectType::ISVolumetricLighting) },
+				{ "BSImagespaceShaderHDRDownSample4",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample4) },
+				{ "BSImagespaceShaderHDRDownSample4LightAdapt",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample4LightAdapt) },
+				{ "BSImagespaceShaderHDRDownSample4LumClamp",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample4LumClamp) },
+				{ "BSImagespaceShaderHDRDownSample4RGB2Lum",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample4RGB2Lum) },
+				{ "BSImagespaceShaderHDRDownSample16",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample16) },
+				{ "BSImagespaceShaderHDRDownSample16LightAdapt",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample16LightAdapt) },
+				{ "BSImagespaceShaderHDRDownSample16Lum",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample16Lum) },
+				{ "BSImagespaceShaderHDRDownSample16LumClamp",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample16LumClamp) },
+				{ "BSImagespaceShaderHDRTonemapBlendCinematic",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISHDRTonemapBlendCinematic) },
+				{ "BSImagespaceShaderHDRTonemapBlendCinematicFade",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISHDRTonemapBlendCinematicFade) },
 			};
 
 			auto it = descriptors.find(imagespaceShader.name.c_str());

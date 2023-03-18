@@ -36,11 +36,9 @@ PS_OUTPUT main(PS_INPUT input)
 	{
 		float2 texCoord = OffsetsAndWeights[sampleIndex].xy * TexelSize.xy + input.TexCoord;
 #if defined(IGNORE_BRIGHTEST)
-		float2 adjustedTexCoord = GetDynamicResolutionAdjustedScreenPosition(texCoord);
-#else
-		float2 adjustedTexCoord = texCoord;
+		texCoord = GetDynamicResolutionAdjustedScreenPosition(texCoord);
 #endif
-		float4 sourceColor = SourceTex.Sample(SourceSampler, adjustedTexCoord);
+		float4 sourceColor = SourceTex.Sample(SourceSampler, texCoord);
 #if defined(IGNORE_BRIGHTEST)
 		downsampledColor += sourceColor;
 #else

@@ -365,11 +365,6 @@ float3 GetWaterNormal(PS_INPUT input, float distanceFactor, float normalsDepthFa
 	return finalNormal;
 }
 
-float3 GetReflectedVector(float3 incidentVector, float3 normal)
-{
-	return normal * -(dot(incidentVector, normal) * 2) + incidentVector;
-}
-
 float3 GetWaterSpecularColor(PS_INPUT input, float3 normal, float3 viewDirection,
 	float distanceFactor, float refractionsDepthFactor)
 {
@@ -379,7 +374,7 @@ float3 GetWaterSpecularColor(PS_INPUT input, float3 normal, float3 viewDirection
 
 #if defined(CUBEMAP)
 	float3 cubemapUV =
-		GetReflectedVector(viewDirection, WaterParams.y * normal + float3(0, 0, 1 - WaterParams.y));
+		reflect(viewDirection, WaterParams.y * normal + float3(0, 0, 1 - WaterParams.y));
 	float3 reflectionColor = CubeMapTex.Sample(CubeMapSampler, cubemapUV).xyz;
 #else
 
@@ -499,7 +494,7 @@ float3 GetSunColor(float3 normal, float3 viewDirection)
 #if defined(INTERIOR) || defined(UNDERWATER)
 	return 0.0.xxx;
 #else
-	float3 reflectionDirection = GetReflectedVector(viewDirection, normal);
+	float3 reflectionDirection = reflect(viewDirection, normal);
 
 	float reflectionMul = exp2(VarAmounts.x * log2(saturate(dot(reflectionDirection, SunDir.xyz))));
 
@@ -543,7 +538,7 @@ PS_OUTPUT main(PS_INPUT input)
 #endif
 
 #if defined(UNDERWATER)
-	float4 depthControl = float4(0, 1, 0, 0);
+	float4 depthControl = float4(0, 1, 1, 0);
 #elif defined(LOD)
 	float4 depthControl = float4(1, 0, 0, 1);
 #elif defined(SPECULAR) && (NUM_SPECULAR_LIGHTS != 0)

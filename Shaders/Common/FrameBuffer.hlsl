@@ -29,3 +29,8 @@ float2 GetPreviousDynamicResolutionAdjustedScreenPosition(float2 screenPosition)
 	return min(float2(DynamicResolutionParams2.w, DynamicResolutionParams1.w),
 		adjustedScreenPosition);
 }
+
+float3 ToSRGBColor(float3 linearColor)
+{
+	return pow(linearColor, FrameParams.x);
+}
