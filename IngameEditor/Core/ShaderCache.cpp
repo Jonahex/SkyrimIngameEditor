@@ -700,6 +700,52 @@ namespace SIE
 				defines[0] = { "LENS_FLARE", nullptr };
 				++defines;
 			}
+			else if (descriptor >= static_cast<uint32_t>(
+									   RE::ImageSpaceEffectManager::EffectType::ISDepthOfField) &&
+					 descriptor <=
+						 static_cast<uint32_t>(
+							 RE::ImageSpaceEffectManager::EffectType::ISDistantBlurMaskedFogged))
+			{
+				if (descriptor >= static_cast<uint32_t>(
+					RE::ImageSpaceEffectManager::EffectType::ISDepthOfField) &&
+					descriptor <=
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISDepthOfFieldMaskedFogged))
+
+				{
+					defines[0] = { "DOF", nullptr };
+					++defines;
+				}
+				else
+				{
+					defines[0] = { "DISTANT_BLUR", nullptr };
+					++defines;
+				}
+				if (descriptor != static_cast<uint32_t>(
+					RE::ImageSpaceEffectManager::EffectType::ISDepthOfField) &&
+					descriptor !=
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISDistantBlur))
+				{
+					defines[0] = { "FOGGED", nullptr };
+					++defines;
+				}
+				if (descriptor == static_cast<uint32_t>(
+									  RE::ImageSpaceEffectManager::EffectType::ISDepthOfFieldMaskedFogged) ||
+					descriptor == static_cast<uint32_t>(
+									  RE::ImageSpaceEffectManager::EffectType::ISDistantBlurMaskedFogged))
+				{
+					defines[0] = { "MASKED", nullptr };
+					++defines;
+				}
+			}
+			else if (descriptor ==
+					 static_cast<uint32_t>(
+						 RE::ImageSpaceEffectManager::EffectType::ISDownsampleIgnoreBrightest))
+			{
+				defines[0] = { "IGNORE_BRIGHTEST", nullptr };
+				++defines;
+			}
 			defines[0] = { nullptr, nullptr };
 		}
 
@@ -1204,7 +1250,8 @@ namespace SIE
 					}
 
 					const auto variableIndex = GetVariableIndex(shaderClass, shader, varDesc.Name);
-					if (variableIndex != -1)
+					bool variableFound = variableIndex != -1;
+					if (variableFound)
 					{
 						constantOffsets[variableIndex] = varDesc.StartOffset / 4;
 					}
@@ -1221,24 +1268,46 @@ namespace SIE
 						var->GetType()->GetDesc(&varTypeDesc);
 						if (varTypeDesc.Elements > 0)
 						{
-							const auto elementSize = varDesc.Size / varTypeDesc.Elements;
-							for (uint32_t arrayIndex = 1; arrayIndex < varTypeDesc.Elements;
-								 ++arrayIndex)
+							if (!variableFound)
 							{
-								const std::string varName =
-									std::format("{}[{}]", varDesc.Name, arrayIndex);
-								const auto variableIndex =
-									GetVariableIndex(shaderClass, shader, varName.c_str());
-								if (variableIndex != -1)
+								const std::string arrayName =
+									std::format("{}[{}]", varDesc.Name, varTypeDesc.Elements);
+								const auto variableArrayIndex =
+									GetVariableIndex(shaderClass, shader, arrayName.c_str());
+								if (variableArrayIndex != 1)
 								{
-									constantOffsets[variableIndex] =
-										(varDesc.StartOffset + elementSize * arrayIndex) / 4;
+									constantOffsets[variableIndex] = varDesc.StartOffset / 4;
 								}
 								else
 								{
 									logger::error("Unknown variable name {} in {} shader {}::{}",
-										varName, magic_enum::enum_name(shaderClass),
+										arrayName, magic_enum::enum_name(shaderClass),
 										magic_enum::enum_name(shader.shaderType.get()), descriptor);
+								}
+							}
+							else
+							{
+								const auto elementSize = varDesc.Size / varTypeDesc.Elements;
+								for (uint32_t arrayIndex = 1; arrayIndex < varTypeDesc.Elements;
+									 ++arrayIndex)
+								{
+									const std::string varName =
+										std::format("{}[{}]", varDesc.Name, arrayIndex);
+									const auto variableIndex =
+										GetVariableIndex(shaderClass, shader, varName.c_str());
+									if (variableIndex != -1)
+									{
+										constantOffsets[variableIndex] =
+											(varDesc.StartOffset + elementSize * arrayIndex) / 4;
+									}
+									else
+									{
+										logger::error(
+											"Unknown variable name {} in {} shader {}::{}", varName,
+											magic_enum::enum_name(shaderClass),
+											magic_enum::enum_name(shader.shaderType.get()),
+											descriptor);
+									}
 								}
 							}
 						}
@@ -1556,6 +1625,40 @@ namespace SIE
 				{ "BSImagespaceShaderISCompositeLensFlareVolumetricLighting",
 					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::
 							ISCompositeLensFlareVolumetricLighting) },
+				{ "BSImagespaceShaderISDebugSnow",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISDebugSnow) },
+				{ "BSImagespaceShaderDepthOfField",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISDepthOfField) },
+				{ "BSImagespaceShaderDepthOfFieldFogged",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISDepthOfFieldFogged) },
+				{ "BSImagespaceShaderDepthOfFieldMaskedFogged",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISDepthOfFieldMaskedFogged) },
+				{ "BSImagespaceShaderDistantBlur",
+					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISDistantBlur) },
+				{ "BSImagespaceShaderDistantBlurFogged",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISDistantBlurFogged) },
+				{ "BSImagespaceShaderDistantBlurMaskedFogged",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISDistantBlurMaskedFogged) },
+				{ "BSImagespaceShaderDoubleVision",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISDoubleVision) },
+				{ "BSImagespaceShaderISDownsample",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISDownsample) },
+				{ "BSImagespaceShaderISDownsampleIgnoreBrightest",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISDownsampleIgnoreBrightest) },
+				{ "BSImagespaceShaderISUpsampleDynamicResolution",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISUpsampleDynamicResolution) },
+				{ "BSImageSpaceShaderVolumetricLighting",
+					static_cast<uint32_t>(
+						RE::ImageSpaceEffectManager::EffectType::ISVolumetricLighting) },
 			};
 
 			auto it = descriptors.find(imagespaceShader.name.c_str());

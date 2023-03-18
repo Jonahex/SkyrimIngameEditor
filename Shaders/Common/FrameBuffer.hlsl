@@ -20,15 +20,12 @@ cbuffer PerFrame										: register(b12)
 float2 GetDynamicResolutionAdjustedScreenPosition(float2 screenPosition)
 {
 	float2 adjustedScreenPosition = max(0.0.xx, DynamicResolutionParams1.xy * screenPosition);
-	adjustedScreenPosition.x = min(DynamicResolutionParams2.z, adjustedScreenPosition.x);
-	adjustedScreenPosition.y = min(DynamicResolutionParams1.y, adjustedScreenPosition.y);
-	return adjustedScreenPosition;
+	return min(float2(DynamicResolutionParams2.z, DynamicResolutionParams1.y), adjustedScreenPosition);
 }
 
 float2 GetPreviousDynamicResolutionAdjustedScreenPosition(float2 screenPosition)
 {
 	float2 adjustedScreenPosition = max(0.0.xx, DynamicResolutionParams1.zw * screenPosition);
-	adjustedScreenPosition.x = min(DynamicResolutionParams2.w, adjustedScreenPosition.x);
-	adjustedScreenPosition.y = min(DynamicResolutionParams1.w, adjustedScreenPosition.y);
-	return adjustedScreenPosition;
+	return min(float2(DynamicResolutionParams2.w, DynamicResolutionParams1.w),
+		adjustedScreenPosition);
 }
