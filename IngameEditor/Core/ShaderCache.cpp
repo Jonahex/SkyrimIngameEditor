@@ -811,6 +811,26 @@ namespace SIE
 				defines[0] = { "WADING_HEIGHTMAP", nullptr };
 				++defines;
 			}
+			else if (descEnum == ISWorldMapNoSkyBlur)
+			{
+				defines[0] = { "NO_SKY_BLUR", nullptr };
+				++defines;
+			}
+			else if (descEnum == ISMinifyContrast)
+			{
+				defines[0] = { "CONTRAST", nullptr };
+				++defines;
+			}
+			else if (descEnum == ISNoiseNormalmap)
+			{
+				defines[0] = { "NORMALMAP", nullptr };
+				++defines;
+			}
+			else if (descEnum == ISNoiseScrollAndBlend)
+			{
+				defines[0] = { "SCROLL_AND_BLEND", nullptr };
+				++defines;
+			}
 			defines[0] = { nullptr, nullptr };
 		}
 
@@ -1591,202 +1611,120 @@ namespace SIE
 
 		static uint32_t GetImagespaceShaderDescriptor(const RE::BSImagespaceShader& imagespaceShader)
 		{
+			using enum RE::ImageSpaceEffectManager::EffectType;
+
 			static const std::unordered_map<std::string_view, uint32_t> descriptors{
-				{ "BSImagespaceShaderISBlur",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur) },
-				{ "BSImagespaceShaderBlur3",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur3) },
-				{ "BSImagespaceShaderBlur5",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur5) },
-				{ "BSImagespaceShaderBlur7",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur7) },
-				{ "BSImagespaceShaderBlur9",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur9) },
-				{ "BSImagespaceShaderBlur11",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur11) },
-				{ "BSImagespaceShaderBlur13",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur13) },
-				{ "BSImagespaceShaderBlur15",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBlur15) },
-				{ "BSImagespaceShaderBrightPassBlur3",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur3) },
-				{ "BSImagespaceShaderBrightPassBlur5",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur5) },
-				{ "BSImagespaceShaderBrightPassBlur7",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur7) },
-				{ "BSImagespaceShaderBrightPassBlur9",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur9) },
-				{ "BSImagespaceShaderBrightPassBlur11",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur11) },
-				{ "BSImagespaceShaderBrightPassBlur13",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur13) },
-				{ "BSImagespaceShaderBrightPassBlur15",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISBrightPassBlur15) },
-				{ "BSImagespaceShaderNonHDRBlur3",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur3) },
-				{ "BSImagespaceShaderNonHDRBlur5",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur5) },
-				{ "BSImagespaceShaderNonHDRBlur7",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur7) },
-				{ "BSImagespaceShaderNonHDRBlur9",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur9) },
-				{ "BSImagespaceShaderNonHDRBlur11",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur11) },
-				{ "BSImagespaceShaderNonHDRBlur13",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur13) },
-				{ "BSImagespaceShaderNonHDRBlur15",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISNonHDRBlur15) },
-				{ "BSImagespaceShaderISBasicCopy",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISBasicCopy) },
-				{ "BSImagespaceShaderISSimpleColor",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISSimpleColor) },
-				{ "BSImagespaceShaderApplyReflections",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISApplyReflections) },
-				{ "BSImagespaceShaderISExp",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISExp) },
-				{ "BSImagespaceShaderISDisplayDepth",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISDisplayDepth) },
-				{ "BSImagespaceShaderAlphaBlend",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISAlphaBlend) },
-				{ "BSImagespaceShaderWaterFlow",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterFlow) },
-				{ "BSImagespaceShaderISWaterBlend",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterBlend) },
-				{ "BSImagespaceShaderGreyScale",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISCopyGrayScale) },
-				{ "BSImagespaceShaderCopy",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISCopy) },
-				{ "BSImagespaceShaderCopyScaleBias",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISCopyScaleBias) },
+				{ "BSImagespaceShaderISBlur", static_cast<uint32_t>(ISBlur) },
+				{ "BSImagespaceShaderBlur3", static_cast<uint32_t>(ISBlur3) },
+				{ "BSImagespaceShaderBlur5", static_cast<uint32_t>(ISBlur5) },
+				{ "BSImagespaceShaderBlur7", static_cast<uint32_t>(ISBlur7) },
+				{ "BSImagespaceShaderBlur9", static_cast<uint32_t>(ISBlur9) },
+				{ "BSImagespaceShaderBlur11", static_cast<uint32_t>(ISBlur11) },
+				{ "BSImagespaceShaderBlur13", static_cast<uint32_t>(ISBlur13) },
+				{ "BSImagespaceShaderBlur15", static_cast<uint32_t>(ISBlur15) },
+				{ "BSImagespaceShaderBrightPassBlur3", static_cast<uint32_t>(ISBrightPassBlur3) },
+				{ "BSImagespaceShaderBrightPassBlur5", static_cast<uint32_t>(ISBrightPassBlur5) },
+				{ "BSImagespaceShaderBrightPassBlur7", static_cast<uint32_t>(ISBrightPassBlur7) },
+				{ "BSImagespaceShaderBrightPassBlur9", static_cast<uint32_t>(ISBrightPassBlur9) },
+				{ "BSImagespaceShaderBrightPassBlur11", static_cast<uint32_t>(ISBrightPassBlur11) },
+				{ "BSImagespaceShaderBrightPassBlur13", static_cast<uint32_t>(ISBrightPassBlur13) },
+				{ "BSImagespaceShaderBrightPassBlur15", static_cast<uint32_t>(ISBrightPassBlur15) },
+				{ "BSImagespaceShaderNonHDRBlur3", static_cast<uint32_t>(ISNonHDRBlur3) },
+				{ "BSImagespaceShaderNonHDRBlur5", static_cast<uint32_t>(ISNonHDRBlur5) },
+				{ "BSImagespaceShaderNonHDRBlur7", static_cast<uint32_t>(ISNonHDRBlur7) },
+				{ "BSImagespaceShaderNonHDRBlur9", static_cast<uint32_t>(ISNonHDRBlur9) },
+				{ "BSImagespaceShaderNonHDRBlur11", static_cast<uint32_t>(ISNonHDRBlur11) },
+				{ "BSImagespaceShaderNonHDRBlur13", static_cast<uint32_t>(ISNonHDRBlur13) },
+				{ "BSImagespaceShaderNonHDRBlur15", static_cast<uint32_t>(ISNonHDRBlur15) },
+				{ "BSImagespaceShaderISBasicCopy", static_cast<uint32_t>(ISBasicCopy) },
+				{ "BSImagespaceShaderISSimpleColor", static_cast<uint32_t>(ISSimpleColor) },
+				{ "BSImagespaceShaderApplyReflections", static_cast<uint32_t>(ISApplyReflections) },
+				{ "BSImagespaceShaderISExp", static_cast<uint32_t>(ISExp) },
+				{ "BSImagespaceShaderISDisplayDepth", static_cast<uint32_t>(ISDisplayDepth) },
+				{ "BSImagespaceShaderAlphaBlend", static_cast<uint32_t>(ISAlphaBlend) },
+				{ "BSImagespaceShaderWaterFlow", static_cast<uint32_t>(ISWaterFlow) },
+				{ "BSImagespaceShaderISWaterBlend", static_cast<uint32_t>(ISWaterBlend) },
+				{ "BSImagespaceShaderGreyScale", static_cast<uint32_t>(ISCopyGrayScale) },
+				{ "BSImagespaceShaderCopy", static_cast<uint32_t>(ISCopy) },
+				{ "BSImagespaceShaderCopyScaleBias", static_cast<uint32_t>(ISCopyScaleBias) },
 				{ "BSImagespaceShaderCopyCustomViewport",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISCopyCustomViewport) },
-				{ "BSImagespaceShaderCopyTextureMask",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISCopyTextureMask) },
+					static_cast<uint32_t>(ISCopyCustomViewport) },
+				{ "BSImagespaceShaderCopyTextureMask", static_cast<uint32_t>(ISCopyTextureMask) },
 				{ "BSImagespaceShaderCopyDynamicFetchDisabled",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISCopyDynamicFetchDisabled) },
+					static_cast<uint32_t>(ISCopyDynamicFetchDisabled) },
 				{ "BSImagespaceShaderISCompositeVolumetricLighting",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISCompositeVolumetricLighting) },
+					static_cast<uint32_t>(ISCompositeVolumetricLighting) },
 				{ "BSImagespaceShaderISCompositeLensFlare",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISCompositeLensFlare) },
+					static_cast<uint32_t>(ISCompositeLensFlare) },
 				{ "BSImagespaceShaderISCompositeLensFlareVolumetricLighting",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::
-							ISCompositeLensFlareVolumetricLighting) },
-				{ "BSImagespaceShaderISDebugSnow",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISDebugSnow) },
-				{ "BSImagespaceShaderDepthOfField",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISDepthOfField) },
+					static_cast<uint32_t>(ISCompositeLensFlareVolumetricLighting) },
+				{ "BSImagespaceShaderISDebugSnow", static_cast<uint32_t>(ISDebugSnow) },
+				{ "BSImagespaceShaderDepthOfField", static_cast<uint32_t>(ISDepthOfField) },
 				{ "BSImagespaceShaderDepthOfFieldFogged",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISDepthOfFieldFogged) },
+					static_cast<uint32_t>(ISDepthOfFieldFogged) },
 				{ "BSImagespaceShaderDepthOfFieldMaskedFogged",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISDepthOfFieldMaskedFogged) },
-				{ "BSImagespaceShaderDistantBlur",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISDistantBlur) },
+					static_cast<uint32_t>(ISDepthOfFieldMaskedFogged) },
+				{ "BSImagespaceShaderDistantBlur", static_cast<uint32_t>(ISDistantBlur) },
 				{ "BSImagespaceShaderDistantBlurFogged",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISDistantBlurFogged) },
+					static_cast<uint32_t>(ISDistantBlurFogged) },
 				{ "BSImagespaceShaderDistantBlurMaskedFogged",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISDistantBlurMaskedFogged) },
-				{ "BSImagespaceShaderDoubleVision",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISDoubleVision) },
-				{ "BSImagespaceShaderISDownsample",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISDownsample) },
+					static_cast<uint32_t>(ISDistantBlurMaskedFogged) },
+				{ "BSImagespaceShaderDoubleVision", static_cast<uint32_t>(ISDoubleVision) },
+				{ "BSImagespaceShaderISDownsample", static_cast<uint32_t>(ISDownsample) },
 				{ "BSImagespaceShaderISDownsampleIgnoreBrightest",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISDownsampleIgnoreBrightest) },
+					static_cast<uint32_t>(ISDownsampleIgnoreBrightest) },
 				{ "BSImagespaceShaderISUpsampleDynamicResolution",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISUpsampleDynamicResolution) },
+					static_cast<uint32_t>(ISUpsampleDynamicResolution) },
 				{ "BSImageSpaceShaderVolumetricLighting",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISVolumetricLighting) },
-				{ "BSImagespaceShaderHDRDownSample4",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample4) },
+					static_cast<uint32_t>(ISVolumetricLighting) },
+				{ "BSImagespaceShaderHDRDownSample4", static_cast<uint32_t>(ISHDRDownSample4) },
 				{ "BSImagespaceShaderHDRDownSample4LightAdapt",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample4LightAdapt) },
+					static_cast<uint32_t>(ISHDRDownSample4LightAdapt) },
 				{ "BSImagespaceShaderHDRDownSample4LumClamp",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample4LumClamp) },
+					static_cast<uint32_t>(ISHDRDownSample4LumClamp) },
 				{ "BSImagespaceShaderHDRDownSample4RGB2Lum",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample4RGB2Lum) },
-				{ "BSImagespaceShaderHDRDownSample16",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample16) },
+					static_cast<uint32_t>(ISHDRDownSample4RGB2Lum) },
+				{ "BSImagespaceShaderHDRDownSample16", static_cast<uint32_t>(ISHDRDownSample16) },
 				{ "BSImagespaceShaderHDRDownSample16LightAdapt",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample16LightAdapt) },
+					static_cast<uint32_t>(ISHDRDownSample16LightAdapt) },
 				{ "BSImagespaceShaderHDRDownSample16Lum",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample16Lum) },
+					static_cast<uint32_t>(ISHDRDownSample16Lum) },
 				{ "BSImagespaceShaderHDRDownSample16LumClamp",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISHDRDownSample16LumClamp) },
+					static_cast<uint32_t>(ISHDRDownSample16LumClamp) },
 				{ "BSImagespaceShaderHDRTonemapBlendCinematic",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISHDRTonemapBlendCinematic) },
+					static_cast<uint32_t>(ISHDRTonemapBlendCinematic) },
 				{ "BSImagespaceShaderHDRTonemapBlendCinematicFade",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISHDRTonemapBlendCinematicFade) },
-				{ "BSImagespaceShaderISIBLensFlares",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISIBLensFlares) },
+					static_cast<uint32_t>(ISHDRTonemapBlendCinematicFade) },
+				{ "BSImagespaceShaderISIBLensFlares", static_cast<uint32_t>(ISIBLensFlares) },
 				{ "BSImagespaceShaderISLightingComposite",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISLightingComposite) },
+					static_cast<uint32_t>(ISLightingComposite) },
 				{ "BSImagespaceShaderISLightingCompositeMenu",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISLightingCompositeMenu) },
+					static_cast<uint32_t>(ISLightingCompositeMenu) },
 				{ "BSImagespaceShaderISLightingCompositeNoDirectionalLight",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::
-							ISLightingCompositeNoDirectionalLight) },
-				{ "BSImagespaceShaderLocalMap",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISLocalMap) },
-				{ "BSISWaterBlendHeightmaps",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterBlendHeightmaps) },
+					static_cast<uint32_t>(ISLightingCompositeNoDirectionalLight) },
+				{ "BSImagespaceShaderLocalMap", static_cast<uint32_t>(ISLocalMap) },
+				{ "BSISWaterBlendHeightmaps", static_cast<uint32_t>(ISWaterBlendHeightmaps) },
 				{ "BSISWaterDisplacementClearSimulation",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterDisplacementClearSimulation) },
+					static_cast<uint32_t>(ISWaterDisplacementClearSimulation) },
 				{ "BSISWaterDisplacementNormals",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterDisplacementNormals) },
+					static_cast<uint32_t>(ISWaterDisplacementNormals) },
 				{ "BSISWaterDisplacementRainRipple",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterDisplacementRainRipple) },
+					static_cast<uint32_t>(ISWaterDisplacementRainRipple) },
 				{ "BSISWaterDisplacementTexOffset",
-					static_cast<uint32_t>(
-						RE::ImageSpaceEffectManager::EffectType::ISWaterDisplacementTexOffset) },
-				{ "BSISWaterWadingHeightmap",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterWadingHeightmap) },
-				{ "BSISWaterRainHeightmap",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterRainHeightmap) },
-				{ "BSISWaterSmoothHeightmap",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterSmoothHeightmap) },
-				{ "BSISWaterWadingHeightmap",
-					static_cast<uint32_t>(RE::ImageSpaceEffectManager::EffectType::ISWaterWadingHeightmap) },
+					static_cast<uint32_t>(ISWaterDisplacementTexOffset) },
+				{ "BSISWaterWadingHeightmap", static_cast<uint32_t>(ISWaterWadingHeightmap) },
+				{ "BSISWaterRainHeightmap", static_cast<uint32_t>(ISWaterRainHeightmap) },
+				{ "BSISWaterSmoothHeightmap", static_cast<uint32_t>(ISWaterSmoothHeightmap) },
+				{ "BSISWaterWadingHeightmap", static_cast<uint32_t>(ISWaterWadingHeightmap) },
+				{ "BSImagespaceShaderMap", static_cast<uint32_t>(ISMap) },
+				{ "BSImagespaceShaderMap", static_cast<uint32_t>(ISMap) },
+				{ "BSImagespaceShaderWorldMap", static_cast<uint32_t>(ISWorldMap) },
+				{ "BSImagespaceShaderWorldMapNoSkyBlur",
+					static_cast<uint32_t>(ISWorldMapNoSkyBlur) },
+				{ "BSImagespaceShaderISMinify", static_cast<uint32_t>(ISMinify) },
+				{ "BSImagespaceShaderISMinifyContrast", static_cast<uint32_t>(ISMinifyContrast) },
+				{ "BSImagespaceShaderNoiseNormalmap", static_cast<uint32_t>(ISNoiseNormalmap) },
+				{ "BSImagespaceShaderNoiseScrollAndBlend", static_cast<uint32_t>(ISNoiseScrollAndBlend) },
 			};
 
 			auto it = descriptors.find(imagespaceShader.name.c_str());
