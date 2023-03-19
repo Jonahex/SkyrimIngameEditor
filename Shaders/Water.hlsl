@@ -108,8 +108,7 @@ VS_OUTPUT main(VS_INPUT input)
 	vsout.PreviousWorldPosition = mul(PreviousWorld, inputPosition);
 #else
 	float fogColorParam = min(VSFogFarColor.w,
-		exp2(NormalsScale.w *
-			 log2(saturate(length(worldViewPos.xyz) * VSFogParam.y - VSFogParam.x))));
+		pow(saturate(length(worldViewPos.xyz) * VSFogParam.y - VSFogParam.x), NormalsScale.w));
 	vsout.FogParam.xyz = lerp(VSFogNearColor.xyz, VSFogFarColor.xyz, fogColorParam);
 	vsout.FogParam.w = fogColorParam;
 
@@ -118,7 +117,7 @@ VS_OUTPUT main(VS_INPUT input)
 
 #if defined(LOD)
 	float4 posAdjust =
-		ObjectUV.x ? 0.0.xxxx : (QPosAdjust.xyxy + worldPos.xyxy) / NormalsScale.xxyy;
+		ObjectUV.x ? 0.0 : (QPosAdjust.xyxy + worldPos.xyxy) / NormalsScale.xxyy;
 
 	vsout.TexCoord1.xyzw = NormalsScroll0 + posAdjust;
 #else
@@ -134,7 +133,7 @@ VS_OUTPUT main(VS_INPUT input)
 
 #if !(defined(FLOWMAP) && (defined(REFRACTIONS) || defined(BLEND_NORMALS) || defined(DEPTH) || NUM_SPECULAR_LIGHTS == 0))
 #if defined(NORMAL_TEXCOORD)
-	float3 normalsScale = 0.001.xxx * NormalsScale.xyz;
+	float3 normalsScale = 0.001 * NormalsScale.xyz;
 	if (ObjectUV.x)
 	{
 		scrollAdjust1 = input.TexCoord0.xy / normalsScale.xx;
@@ -144,15 +143,15 @@ VS_OUTPUT main(VS_INPUT input)
 #else
     if (ObjectUV.x)
     {
-		scrollAdjust1 = 0.0.xx;
-		scrollAdjust2 = 0.0.xx;
-		scrollAdjust3 = 0.0.xx;
+		scrollAdjust1 = 0.0;
+		scrollAdjust2 = 0.0;
+		scrollAdjust3 = 0.0;
     }
 #endif
 #endif
 
-	vsout.TexCoord1 = 0.0.xxxx;
-	vsout.TexCoord2 = 0.0.xxxx;
+	vsout.TexCoord1 = 0.0;
+	vsout.TexCoord2 = 0.0;
 #if defined(FLOWMAP)
 #if !(((defined(SPECULAR) || NUM_SPECULAR_LIGHTS == 0) || (defined(UNDERWATER) && defined(REFRACTIONS))) && !defined(NORMAL_TEXCOORD))
 #if defined(BLEND_NORMALS)
@@ -161,16 +160,16 @@ VS_OUTPUT main(VS_INPUT input)
 	vsout.TexCoord2.xy = NormalsScroll1.xy + scrollAdjust3;
 #else
 	vsout.TexCoord1.xy = NormalsScroll0.xy + scrollAdjust1;
-	vsout.TexCoord1.zw = 0.0.xx;
-	vsout.TexCoord2.xy = 0.0.xx;
+	vsout.TexCoord1.zw = 0.0;
+	vsout.TexCoord2.xy = 0.0;
 #endif
 #endif
 #if !defined(NORMAL_TEXCOORD)
-	vsout.TexCoord3 = 0.0.xxxx;
+	vsout.TexCoord3 = 0.0;
 #elif defined(WADING)
-	vsout.TexCoord2.zw = ((-0.5.xx + input.TexCoord0.xy) * 0.1.xx + CellTexCoordOffset.xy) +
+	vsout.TexCoord2.zw = ((-0.5 + input.TexCoord0.xy) * 0.1 + CellTexCoordOffset.xy) +
 		float2(CellTexCoordOffset.z, -CellTexCoordOffset.w + ObjectUV.x) / ObjectUV.xx;
-	vsout.TexCoord3.xy = -0.25.xx + (input.TexCoord0.xy * 0.5.xx + ObjectUV.yz);
+	vsout.TexCoord3.xy = -0.25 + (input.TexCoord0.xy * 0.5 + ObjectUV.yz);
 	vsout.TexCoord3.zw = input.TexCoord0.xy;
 #elif (defined(REFRACTIONS) || NUM_SPECULAR_LIGHTS == 0 || defined(BLEND_NORMALS))
 	vsout.TexCoord2.zw = (CellTexCoordOffset.xy + input.TexCoord0.xy) / ObjectUV.xx;
@@ -185,7 +184,7 @@ VS_OUTPUT main(VS_INPUT input)
     vsout.TexCoord2.z = worldViewPos.w;
     vsout.TexCoord2.w = 0;
 #if (defined(WADING) || (defined(VERTEX_ALPHA_DEPTH) && defined(VC)))
-    vsout.TexCoord3 = 0.0.xxxx;
+    vsout.TexCoord3 = 0.0;
 #if (defined(NORMAL_TEXCOORD) && ((!defined(BLEND_NORMALS) && !defined(VERTEX_ALPHA_DEPTH)) || defined(WADING)))
     vsout.TexCoord3.xy = input.TexCoord0;
 #endif
@@ -480,8 +479,7 @@ float3 GetWaterDiffuseColor(PS_INPUT input, float3 normal, float3 viewDirection,
 	float refractionMul = 0;
 #else
 	float refractionMul =
-		1 - exp2(FogNearColor.w *
-				 log2(saturate((-distanceMul.x * FogParam.z + FogParam.z) / FogParam.w)));
+		1 - pow(saturate((-distanceMul.x * FogParam.z + FogParam.z) / FogParam.w), FogNearColor.w);
 #endif
 	return lerp(refractionColor * WaterParams.w, refractionDiffuseColor, refractionMul);
 #else
@@ -499,7 +497,7 @@ float3 GetSunColor(float3 normal, float3 viewDirection)
 	float reflectionMul = exp2(VarAmounts.x * log2(saturate(dot(reflectionDirection, SunDir.xyz))));
 
 	float3 sunDirection = SunColor.xyz * SunDir.w;
-	float sunMul = exp2(ShallowColor.w * log2(saturate(dot(normal, float3(-0.099, -0.099, 0.99)))));
+	float sunMul = pow(saturate(dot(normal, float3(-0.099, -0.099, 0.99))), ShallowColor.w);
 	return (reflectionMul * sunDirection) * DeepColor.w + WaterParams.z * (sunMul * sunDirection);
 #endif
 }
@@ -561,7 +559,7 @@ PS_OUTPUT main(PS_INPUT input)
 		float lightFade = saturate(length(lightVector) / LightPos[lightIndex].w);
 		float lightColorMul = (1 - lightFade * lightFade);
 		float LdotN = saturate(dot(lightDirection, normal));
-		float3 lightColor = (LightColor[lightIndex].xyz * exp2(FresnelRI.z * log2(LdotN))) * lightColorMul;
+		float3 lightColor = (LightColor[lightIndex].xyz * pow(LdotN, FresnelRI.z)) * lightColorMul;
 		finalColor += lightColor;
 	}
 

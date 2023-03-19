@@ -22,34 +22,41 @@ PS_OUTPUT main(PS_INPUT input)
 {
 	PS_OUTPUT psout;
 
-	float3 colorLT =
-		ImageTex.Sample(ImageSampler, input.TexCoord + float2(-TexelSize.x, TexelSize.y)).xyz;
-	float3 colorCT = ImageTex.Sample(ImageSampler, input.TexCoord + float2(0, TexelSize.y)).xyz;
-	float3 colorRT = ImageTex.Sample(ImageSampler, input.TexCoord + TexelSize.xy).xyz;
-	float3 colorLB = ImageTex.Sample(ImageSampler, input.TexCoord - TexelSize.xy).xyz;
-	float3 colorCB = ImageTex.Sample(ImageSampler, input.TexCoord + float2(0, -TexelSize.y)).xyz;
-	float3 colorRB =
-		ImageTex.Sample(ImageSampler, input.TexCoord + float2(TexelSize.x, -TexelSize.y)).xyz;
-	float3 colorLC = ImageTex.Sample(ImageSampler, input.TexCoord + float2(-TexelSize.x, 0)).xyz;
-	float3 colorRC = ImageTex.Sample(ImageSampler, input.TexCoord + float2(TexelSize.x, 0)).xyz;
+	float3 weight = float3(0.5, 0.25, 1);
+	float3 colorLR = 0;
+	float3 colorBT = 0;
+	[unroll] for(int j = -1; j <= 1; ++j)
+	{
+		[unroll] for(int i = -1; i <= 1; ++i)
+		{
+			if (i == 0 && j == 0)
+			{
+				continue;
+			}
 
-	float3 colorTB = -colorRT * float3(0.5, 0.25, 1) - colorCT * float3(1, 0.5, 2) -
-	                 colorLT * float3(0.5, 0.25, 1) + colorRB * float3(0.5, 0.25, 1) +
-	                 colorCB * float3(1, 0.5, 2) + float3(0.5, 0.25, 1) * colorLB;
-	float3 colorLR = -colorRT * float3(0.5, 0.25, 1) -
-	                 colorRB * float3(0.5, 0.25, 1) + colorLT * float3(0.5, 0.25, 1) +
-	                 colorLC * float3(1, 0.5, 2) + float3(0.5, 0.25, 1) * colorLB;
+			float3 currentColor =
+				ImageTex.Sample(ImageSampler, input.TexCoord + float2(i * TexelSize.x, j * TexelSize.y))
+					.xyz;
 
-	float3 unk1 = 4 * (pow(colorLR, 2) + pow(colorTB, 2));
+			float centerMul = 1;
+			if (i == 0 || j == 0)
+			{
+				centerMul = 2;
+			}
+
+			colorLR += -i * (centerMul * weight) * currentColor;
+			colorBT += -j * (centerMul * weight) * currentColor;
+		}
+	}
 
 	float4 colorCC = ImageTex.Sample(ImageSampler, input.TexCoord);
 	float luminance = RGBToLuminanceAlternative(colorCC.xyz);
 
-	float unk2 = (dot(4 * unk1, 1.75) + 0.04 * luminance) * (1 - colorCC.w);
-	float2 unk3 = 1 - pow(2 * abs(input.TexCoord - 0.5), 5);
+	float alpha = (dot(4 * (pow(colorLR, 2) + pow(colorBT, 2)), 1.75) + luminance) * (1 - colorCC.w);
+	float2 edgeFadeFactor = 1 - pow(2 * abs(input.TexCoord - 0.5), 5);
 
-	psout.Color.xyz = unk1.x + 0.04 * luminance;
-	psout.Color.w = unk2 * unk3.x * unk3.y;
+	psout.Color.xyz = 1.04 * luminance;
+	psout.Color.w = alpha * edgeFadeFactor.x * edgeFadeFactor.y;
 
 	return psout;
 }

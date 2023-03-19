@@ -117,19 +117,32 @@ PS_OUTPUT main(PS_INPUT input)
 	psout.Color = 0.5;
 #elif defined (NORMALS)
 
-	float valueLB = GetDisplacementNormalValue(input.TexCoord + float2(-0.001953125, -0.001953125));
-	float valueLC = GetDisplacementNormalValue(input.TexCoord + float2(-0.001953125, 0));
-	float valueLT = GetDisplacementNormalValue(input.TexCoord + float2(-0.001953125, 0.001953125));
-	float valueCB = GetDisplacementNormalValue(input.TexCoord + float2(0, -0.001953125));
-	float valueCT = GetDisplacementNormalValue(input.TexCoord + float2(0, 0.001953125));
-	float valueRB = GetDisplacementNormalValue(input.TexCoord + float2(0.001953125, -0.001953125));
-	float valueRC = GetDisplacementNormalValue(input.TexCoord + float2(0.001953125, 0));
-	float valueRT = GetDisplacementNormalValue(input.TexCoord + float2(0.001953125, 0.001953125));
+	float offset = 0.001953125;
+	float valueRL = 0;
+	float valueTB = 0;
+	[unroll] for (int i = -1; i <= 1; ++i)
+	{
+		[unroll] for (int j = -1; j <= 1; ++j)
+		{
+			if (i == 0 && j == 0)
+			{
+				continue;
+			}
 
-	float sumRL = valueRT + 2 * valueRC + valueRB - valueLT - 2 * valueLC - valueLB;
-	float sumTB = valueRT + 2 * valueCT + valueLT - valueRB - 2 * valueCB - valueLB;
+			float currentValue = GetDisplacementNormalValue(input.TexCoord + float2(i * offset, j * offset));
 
-	psout.Color = float4(normalize(float3(-sumRL, sumTB, 1)), 1) * 0.5 + 0.5;
+			float centerMul = 1;
+			if (i == 0 || j == 0)
+			{
+				centerMul = 2;
+			}
+
+			valueRL += i * centerMul * currentValue;
+			valueTB += j * centerMul * currentValue;
+		}
+	}
+
+	psout.Color = float4(normalize(float3(-valueRL, valueTB, 1)), 1) * 0.5 + 0.5;
 	
 #elif defined(RAIN_RIPPLE) || defined(WADING_RIPPLE)
 	psout.Color = float4(1, 0.5, 0.5, 0.5);
