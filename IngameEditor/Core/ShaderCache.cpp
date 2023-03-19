@@ -831,6 +831,21 @@ namespace SIE
 				defines[0] = { "SCROLL_AND_BLEND", nullptr };
 				++defines;
 			}
+			else if (descEnum == ISRadialBlur)
+			{
+				defines[0] = { "SAMPLES_COUNT", "2" };
+				++defines;
+			}
+			else if (descEnum == ISRadialBlurHigh)
+			{
+				defines[0] = { "SAMPLES_COUNT", "10" };
+				++defines;
+			}
+			else if (descEnum == ISRadialBlurMedium)
+			{
+				defines[0] = { "SAMPLES_COUNT", "6" };
+				++defines;
+			}
 			defines[0] = { nullptr, nullptr };
 		}
 
@@ -1724,7 +1739,13 @@ namespace SIE
 				{ "BSImagespaceShaderISMinify", static_cast<uint32_t>(ISMinify) },
 				{ "BSImagespaceShaderISMinifyContrast", static_cast<uint32_t>(ISMinifyContrast) },
 				{ "BSImagespaceShaderNoiseNormalmap", static_cast<uint32_t>(ISNoiseNormalmap) },
-				{ "BSImagespaceShaderNoiseScrollAndBlend", static_cast<uint32_t>(ISNoiseScrollAndBlend) },
+				{ "BSImagespaceShaderNoiseScrollAndBlend",
+					static_cast<uint32_t>(ISNoiseScrollAndBlend) },
+				{ "BSImagespaceShaderRadialBlur",
+					static_cast<uint32_t>(ISRadialBlur) },
+				{ "BSImagespaceShaderRadialBlurHigh", static_cast<uint32_t>(ISRadialBlurHigh) },
+				{ "BSImagespaceShaderRadialBlurMedium", static_cast<uint32_t>(ISRadialBlurMedium) },
+				{ "BSImagespaceShaderRefraction", static_cast<uint32_t>(ISRefraction) },
 			};
 
 			auto it = descriptors.find(imagespaceShader.name.c_str());
