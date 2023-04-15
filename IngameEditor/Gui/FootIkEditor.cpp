@@ -17,7 +17,7 @@ namespace SIE
 
 		if (const auto& characterSetup = character.setup)
 		{
-			if (const auto& characterData = characterSetup->m_data)
+			if (const auto& characterData = characterSetup->data)
 			{
 				if (const auto& footIk = characterData->m_footIkDriverInfo)
 				{

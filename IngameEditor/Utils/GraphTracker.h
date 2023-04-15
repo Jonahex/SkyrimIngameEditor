@@ -27,6 +27,7 @@ namespace SIE
 			eEventSent,
 			eEventReceived,
 			eActionProcessed,
+			eActionProcessFailed,
 		};
 
 		struct Event

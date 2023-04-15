@@ -1172,7 +1172,7 @@ namespace BehaviorGraph
 		{
 			func(mediator, action);
 
-			if (action->unk28 == "HorseExit") 
+			if (action->animEvent == "HorseExit") 
 			{
 				RE::BSTSmartPointer<RE::BSAnimationGraphManager> manager;
 				action->target->GetAnimationGraphManager(manager);
@@ -1183,7 +1183,10 @@ namespace BehaviorGraph
 					//logger::info(name.data());
 				}
 
-				logger::info("{} {} {} {} {}", action->action->formEditorID.data(), action->source ? action->source->GetDisplayFullName() : "null", action->target ? action->target->GetDisplayFullName() : "null", action->unk28.data(), action->unk30.data());
+				logger::info("{} {} {} {} {}", action->action->formEditorID.data(),
+					action->source ? action->source->GetDisplayFullName() : "null",
+					action->target ? action->target->GetDisplayFullName() : "null",
+					action->animEvent.data(), action->targetAnimEvent.data());
 			}
 		}
 		static inline REL::Relocation<decltype(thunk)> func;

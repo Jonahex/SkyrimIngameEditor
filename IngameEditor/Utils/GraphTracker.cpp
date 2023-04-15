@@ -188,14 +188,28 @@ namespace SIE
 	{
 		const bool processed = func(mediator, actionData);
 
-		if (EnableTracking && processed && Target == actionData->source.get())
+		if (EnableTracking && Target == actionData->source.get())
 		{
 			std::lock_guard lock(Mutex);
-			Events.push_back(
-				{ EventType::eActionProcessed, actionData->action->formEditorID.data(), std::chrono::system_clock::now() });
-			if (EnableLogging)
+			if (processed)
 			{
-				logger::info("Action {} was processed", actionData->action->formEditorID.data());
+				Events.push_back({ EventType::eActionProcessed,
+					actionData->action->formEditorID.data(), std::chrono::system_clock::now() });
+				if (EnableLogging)
+				{
+					logger::info("Action {} was processed",
+						actionData->action->formEditorID.data());
+				}
+			}
+			else
+			{
+				Events.push_back({ EventType::eActionProcessFailed,
+					actionData->action->formEditorID.data(), std::chrono::system_clock::now() });
+				if (EnableLogging)
+				{
+					logger::info("Action {} processing failed",
+						actionData->action->formEditorID.data());
+				}
 			}
 		}
 
