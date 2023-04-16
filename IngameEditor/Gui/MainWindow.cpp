@@ -16,6 +16,9 @@
 
 #include <RE/B/BGSGrassManager.h>
 #include <RE/B/BSRenderPass.h>
+#include <RE/C/CombatBehaviorTree.h>
+#include <RE/C/CombatBehaviorTreeNode.h>
+#include <RE/C/CombatBehaviorTreeRootNode.h>
 #include <RE/I/ImageSpaceEffect.h>
 #include <RE/I/ImageSpaceEffectManager.h>
 #include <RE/M/Main.h>
@@ -224,6 +227,23 @@ namespace SIE
 			}
 
 			ImGui::PopID();
+		}
+
+		void CombatBehaviorTreeNodeViewer(const RE::CombatBehaviorTreeNode& node) 
+		{ 
+			const auto& typeName = RTTICache::Instance().GetTypeName(&node);
+			if (PushingCollapsingHeader(std::format("{} [{}]", node.GetName(), typeName).c_str()))
+			{
+				for (const auto subNode : node.children)
+				{
+					if (subNode != nullptr)
+					{
+						CombatBehaviorTreeNodeViewer(*subNode);
+					}
+				}
+
+				ImGui::TreePop();
+			}
 		}
 	}
 
@@ -532,6 +552,29 @@ namespace SIE
 						return RE::BSContainer::ForEachResult::kContinue;
 					});
 			}
+			ImGui::TreePop();
+		}
+
+		if (PushingCollapsingHeader("Combat Behavior Trees Viewer"))
+		{
+			const auto& trees = RE::CombatBehaviorTree::GetStorage();
+
+			for (const auto& [name, tree] : trees)
+			{
+				if (tree != nullptr)
+				{
+					if (PushingCollapsingHeader(tree->name.c_str()))
+					{
+						if (tree->rootNode != nullptr)
+						{
+							SMainWindow::CombatBehaviorTreeNodeViewer(*tree->rootNode);
+						}
+
+						ImGui::TreePop();
+					}
+				}
+			}
+
 			ImGui::TreePop();
 		}
 
