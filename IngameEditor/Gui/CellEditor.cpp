@@ -16,7 +16,7 @@
 #include <RE/E/ExtraCellWaterEnvMap.h>
 #include <RE/E/ExtraCellWaterType.h>
 #include <RE/G/GridCellArray.h>
-#include <RE/I/ImageSpaceEffectManager.h>
+#include <RE/I/ImageSpaceManager.h>
 #include <RE/N/NiAVObject.h>
 #include <RE/N/NiCloningProcess.h>
 #include <RE/N/NiRTTI.h>
@@ -71,7 +71,7 @@ namespace SIE
 						cell.extraList.Add(extraImageSpace);
 					}
 
-					RE::ImageSpaceEffectManager::GetSingleton()->unkA8 = &imageSpace->data;
+					RE::ImageSpaceManager::GetSingleton()->currentBaseData = &imageSpace->data;
 				}
 				else if (extraImageSpace != nullptr)
 				{

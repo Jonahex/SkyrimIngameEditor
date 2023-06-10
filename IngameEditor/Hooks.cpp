@@ -47,7 +47,7 @@
 #include <RE/T/TESLandTexture.h>
 #include <RE/B/BSLightingShaderProperty.h>
 #include <RE/E/ExtraGhost.h>
-#include <RE/I/ImageSpaceEffectManager.h>
+#include <RE/I/ImageSpaceManager.h>
 #include <RE/B/BSXFlags.h>
 #include <RE/B/BSRenderPass.h>
 #include <RE/N/NiStream.h>
@@ -1193,6 +1193,24 @@ namespace BehaviorGraph
 	};
 }
 
+struct MissingMeshCrashFix
+{
+	static void thunk(void* a1, RE::TESObjectREFR* a2)
+	{
+		if (a2 != nullptr)
+		{
+			if (auto model = a2->Get3D2())
+			{
+				if (auto fadeNode = model->AsFadeNode())
+				{
+					fadeNode->unk144 = 0;
+				}
+			}
+		}
+	}
+	static inline REL::Relocation<decltype(thunk)> func;
+};
+
 namespace Hooks
 {
 	void Install()
@@ -1329,6 +1347,17 @@ namespace Hooks
 				for (const auto& target : targets)
 				{
 					stl::write_thunk_call<WinMain_OnQuitGame>(target.address());
+				}
+			}
+
+			{
+				const std::array targets{
+					REL::Relocation<std::uintptr_t>(RELOCATION_ID(12880, 13023),
+						OFFSET(0x1F6, 0x228)),
+				};
+				for (const auto& target : targets)
+				{
+					stl::write_thunk_call<MissingMeshCrashFix>(target.address());
 				}
 			}
 

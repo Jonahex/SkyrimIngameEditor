@@ -27,12 +27,14 @@ namespace SIE
 		int16_t maxX = 50;
 		int16_t maxY = 25;
 
+		int16_t halfGrid = 4;
+		float shootingTime = 12.f;
+
 	private:
 		OverheadBuilder() = default;
 
 		bool isRunning = false;
 
-		int16_t halfGrid = 4;
 		std::chrono::microseconds timeToSkip = 1s;
 
 		int16_t currentX;

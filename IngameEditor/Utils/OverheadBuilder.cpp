@@ -235,7 +235,7 @@ namespace SIE
 				{ exteriorData->worldX + 2048.f, exteriorData->worldY + 2048.f, 50000.f }, false);
 			player->SetRotationX(90);
 			player->SetRotationZ(0);
-			ResetTimeTo(12.f);
+			ResetTimeTo(shootingTime);
 			SOverheadBuilder::SetupWeather();
 		}
 

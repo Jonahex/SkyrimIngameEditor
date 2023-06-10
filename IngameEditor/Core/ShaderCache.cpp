@@ -1,7 +1,7 @@
 #include "Core/ShaderCache.h"
 
 #include <RE/B/BSImageSpaceShader.h>
-#include <RE/I/ImageSpaceEffectManager.h>
+#include <RE/I/ImageSpaceManager.h>
 #include <RE/V/VertexDesc.h>
 
 #include <magic_enum.hpp>
@@ -608,9 +608,10 @@ namespace SIE
 
 		static void GetImagespaceShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
 		{
-			using enum RE::ImageSpaceEffectManager::EffectType;
+			using enum RE::ImageSpaceManager::ImageSpaceEffectEnum;
 
-			const auto descEnum = static_cast<RE::ImageSpaceEffectManager::EffectType>(descriptor);
+			const auto descEnum =
+				static_cast<RE::ImageSpaceManager::ImageSpaceEffectEnum>(descriptor);
 			if ((descriptor >= static_cast<uint32_t>(ISBlur3) &&
 					descriptor <= static_cast<uint32_t>(ISBrightPassBlur15)) ||
 				descEnum == ISBlur)
@@ -1626,7 +1627,7 @@ namespace SIE
 
 		static uint32_t GetImagespaceShaderDescriptor(const RE::BSImagespaceShader& imagespaceShader)
 		{
-			using enum RE::ImageSpaceEffectManager::EffectType;
+			using enum RE::ImageSpaceManager::ImageSpaceEffectEnum;
 
 			static const std::unordered_map<std::string_view, uint32_t> descriptors{
 				{ "BSImagespaceShaderISBlur", static_cast<uint32_t>(ISBlur) },

@@ -20,7 +20,6 @@
 #include <RE/C/CombatBehaviorTreeNode.h>
 #include <RE/C/CombatBehaviorTreeRootNode.h>
 #include <RE/I/ImageSpaceEffect.h>
-#include <RE/I/ImageSpaceEffectManager.h>
 #include <RE/M/Main.h>
 #include <RE/N/NiCamera.h>
 #include <RE/N/NiNode.h>
@@ -300,52 +299,6 @@ namespace SIE
 
 			if (PushingCollapsingHeader("Effects"))
 			{
-				auto isem = RE::ImageSpaceEffectManager::GetSingleton();
-
-				/*if (PushingCollapsingHeader("Imagespace Shaders"))
-				{
-					ImGui::Checkbox("Apply Reflections",
-						&isem->shaderInfo.applyReflectionsShaderInfo->isEnabled);
-					ImGui::Checkbox("Apply Volumetric Lighting",
-						&isem->shaderInfo.applyVolumetricLightingShaderInfo->isEnabled);
-					ImGui::Checkbox("Basic Copy", &isem->shaderInfo.basicCopyShaderInfo->isEnabled);
-					ImGui::Checkbox("Lens Flares", &isem->shaderInfo.iblfShaderInfo->isEnabled);
-					ImGui::Checkbox("Blur CS", &isem->shaderInfo.blurCSShaderInfo->isEnabled);
-					ImGui::Checkbox("Composite Lens Flare Volumetric Lighting",
-						&isem->shaderInfo.compositeLensFlareVolumetricLightingShaderInfo
-							 ->isEnabled);
-					ImGui::Checkbox("Copy Subregion CS",
-						&isem->shaderInfo.copySubRegionCSShaderInfo->isEnabled);
-					ImGui::Checkbox("Debug Snow", &isem->shaderInfo.debugSnowShaderInfo->isEnabled);
-					ImGui::Checkbox("Exponential Prefilter",
-						&isem->shaderInfo.ibExponentialPreFilterShaderInfo->isEnabled);
-					ImGui::Checkbox("Lighting Composite",
-						&isem->shaderInfo.lightingCompositeShaderInfo->isEnabled);
-					ImGui::Checkbox("Perlin Noise CS",
-						&isem->shaderInfo.perlinNoiseCSShaderInfo->isEnabled);
-					ImGui::Checkbox("Reflections",
-						&isem->shaderInfo.reflectionsShaderInfo->isEnabled);
-					ImGui::Checkbox("Scalable Ambient Obscurance",
-						&isem->shaderInfo.scalableAmbientObscuranceShaderInfo->isEnabled);
-					ImGui::Checkbox("Scalable Ambient Obscurance CS",
-						&isem->shaderInfo.saoCSShaderInfo->isEnabled);
-					ImGui::Checkbox("Indirect Lighting",
-						&isem->shaderInfo.indirectLightingShaderInfo->isEnabled);
-					ImGui::Checkbox("Simple Color",
-						&isem->shaderInfo.simpleColorShaderInfo->isEnabled);
-					ImGui::Checkbox("Snow SSS", &isem->shaderInfo.snowSSSShaderInfo->isEnabled);
-					ImGui::Checkbox("Temporal AAA",
-						&isem->shaderInfo.temporalAAShaderInfo->isEnabled);
-					ImGui::Checkbox("Upsample Dynamic Resolution",
-						&isem->shaderInfo.upsampleDynamicResolutionShaderInfo->isEnabled);
-					ImGui::Checkbox("Water Blend",
-						&isem->shaderInfo.waterBlendShaderInfo->isEnabled);
-					ImGui::Checkbox("Underwater Mask",
-						&isem->shaderInfo.underwaterMaskShaderInfo->isEnabled);
-
-					ImGui::TreePop();
-				}*/
-
 				ImGui::Checkbox("HDR", &*REL::Relocation<bool*>(RE::Offset::HDREnabledFlag));
 				ImGui::Checkbox("Fog",
 					&*REL::Relocation<bool*>(RE::Offset::SAOApplyFogEnabledFlag));
@@ -459,6 +412,12 @@ namespace SIE
 #ifdef OVERHEAD_TOOL
 				if (PushingCollapsingHeader("Overhead Builder"))
 				{
+					int16_t minHalfGrid = 0;
+					int16_t maxHalfGrid = 10;
+					ImGui::SliderScalar("Half Grid", ImGuiDataType_S16,
+						&OverheadBuilder::Instance().halfGrid, &minHalfGrid, &maxHalfGrid);
+					ImGui::SliderFloat("Shooting Time", &OverheadBuilder::Instance().shootingTime,
+						0.f, 24.f);
 					ImGui::DragScalarN("Min", ImGuiDataType_S16, &OverheadBuilder::Instance().minX,
 						2);
 					ImGui::DragScalarN("Max", ImGuiDataType_S16, &OverheadBuilder::Instance().maxX,

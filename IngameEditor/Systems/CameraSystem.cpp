@@ -64,7 +64,7 @@ namespace SIE
 					NiQuaternion__FromMatrix(RELOCATION_ID(69467, 70844));
 
 				RE::NiMatrix3 tmp;
-				NiMatrix3__FromEulerZXY(&tmp, state->eulerZ, state->eulerX,
+				NiMatrix3__FromEulerZXY(&tmp, state->rotationInput.y, state->rotationInput.x,
 					FreeCameraStateExtensionInstance.roll);
 				NiQuaternion__FromMatrix(&a_rotation, &tmp);
 			}
