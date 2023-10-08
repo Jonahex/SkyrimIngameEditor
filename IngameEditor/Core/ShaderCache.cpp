@@ -879,6 +879,9 @@ namespace SIE
 			case RE::BSShader::Type::Particle:
 				GetParticleShaderDefines(descriptor, defines);
 				break;
+			case RE::BSShader::Type::Effect:
+				GetEffectShaderDefines(descriptor, defines);
+				break;
 			}
 		}
 
@@ -1622,7 +1625,8 @@ namespace SIE
 			       shader.shaderType == RE::BSShader::Type::Sky ||
 			       shader.shaderType == RE::BSShader::Type::Grass ||
 			       shader.shaderType == RE::BSShader::Type::Particle ||
-			       shader.shaderType == RE::BSShader::Type::Water;
+			       shader.shaderType == RE::BSShader::Type::Water ||
+			       shader.shaderType == RE::BSShader::Type::Effect;
 		}
 
 		static uint32_t GetImagespaceShaderDescriptor(const RE::BSImagespaceShader& imagespaceShader)
