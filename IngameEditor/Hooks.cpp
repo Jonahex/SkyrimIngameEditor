@@ -1340,6 +1340,9 @@ namespace Hooks
 				RE::VTABLE_TESRegion[0]);
 			stl::write_vfunc<BehaviorGraph::TESForm_SetFormEditorID>(RE::VTABLE_TESRegion[0]);
 
+			stl::write_vfunc<BehaviorGraph::TESForm_GetFormEditorID>(RE::VTABLE_TESPackage[0]);
+			stl::write_vfunc<BehaviorGraph::TESForm_SetFormEditorID>(RE::VTABLE_TESPackage[0]);
+
 			{
 				const std::array targets{
 					REL::Relocation<std::uintptr_t>(RE::Offset::WinMain, OFFSET(0x35, 0x1AE)),
@@ -1393,8 +1396,8 @@ namespace Hooks
 			*IsLodBlendingEnabled = false;
 			static const REL::Relocation<bool*> IsHDREnabled(RE::Offset::HDREnabledFlag);
 			*IsHDREnabled = false;
-			auto isem = RE::ImageSpaceEffectManager::GetSingleton();
-			isem->shaderInfo.blurCSShaderInfo->isEnabled = false;
+			auto ism = RE::ImageSpaceManager::GetSingleton();
+			ism->shaderInfo.blurCSShaderInfo->isEnabled = false;
 #endif
 		
 //#ifdef SKYRIM_SUPPORT_AE

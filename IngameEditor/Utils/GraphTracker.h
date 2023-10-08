@@ -12,6 +12,7 @@ namespace RE
 {
 	class BGSActionData;
 	class IAnimationGraphManagerHolder;
+	class MovementControllerNPC;
 	class TESObjectREFR;
 
 	struct BSAnimationGraphEvent;
@@ -24,10 +25,14 @@ namespace SIE
 	public:
 		enum class EventType
 		{
-			eEventSent,
-			eEventReceived,
-			eActionProcessed,
-			eActionProcessFailed,
+			eEventSent = 1 << 0,
+			eEventReceived = 1 << 1,
+			eActionProcessed = 1 << 2,
+			eActionProcessFailed = 1 << 3,
+			eMovementMessageProcessed = 1 << 4,
+
+			eAll = eEventSent | eEventReceived | eActionProcessed | eActionProcessFailed |
+			       eMovementMessageProcessed,
 		};
 
 		struct Event
@@ -45,6 +50,8 @@ namespace SIE
 		void SetEnableTracking(bool value);
 		bool GetEnableLogging() const;
 		void SetEnableLogging(bool value);
+		void SetEventTypeFilter(EventType filter);
+		EventType GetEventTypeFilter() const;
 		void SetTarget(RE::TESObjectREFR* aTarget);
 
 		const std::vector<Event>& GetRecordedEvents() const;
@@ -79,8 +86,17 @@ namespace SIE
 			static inline REL::Relocation<decltype(thunk)> func;
 		};
 
+		struct MovementControllerNPC_OnMessage
+		{
+			static void thunk(RE::MovementControllerNPC* controller, void* message);
+
+			static inline REL::Relocation<decltype(thunk)> func;
+			static constexpr size_t idx = 0x14;
+		};
+
 		static inline bool EnableTracking = false;
 		static inline bool EnableLogging = true;
+		static inline EventType EventTypeFilter = EventType::eAll;
 
 		static inline RE::TESObjectREFR* Target = nullptr;
 		static inline std::mutex Mutex;

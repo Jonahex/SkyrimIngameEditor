@@ -19,6 +19,7 @@ namespace SIE
 	bool SliderFloatUInt8(const char* label, uint8_t* v, float v_min, float v_max,
 		const char* format = "%.3f", ImGuiSliderFlags flags = 0);
 	bool PushingCollapsingHeader(const char* label, ImGuiTreeNodeFlags flags = 0);
+	bool ReadOnlyCheckbox(const char* label, bool value);
 
 	template <size_t N>
 	void Normalize(float v[N])

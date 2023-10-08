@@ -89,6 +89,12 @@ namespace SIE
 		return ImGui::TreeNodeBehavior(window->GetID(label), flags, label);
 	}
 
+	bool ReadOnlyCheckbox(const char* label, bool value) 
+	{
+		bool editableValue = value;
+		return ImGui::Checkbox(label, &editableValue);
+	}
+
 	bool BSFixedStringEdit(const char* label, RE::BSFixedString& text) 
 	{
 		std::string stdText = text.c_str();

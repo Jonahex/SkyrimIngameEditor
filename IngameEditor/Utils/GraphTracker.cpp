@@ -1,9 +1,11 @@
 #include "Utils/GraphTracker.h"
 
 #include "Utils/Engine.h"
+#include "Utils/RTTICache.h"
 
 #include <RE/B/BGSActionData.h>
 #include <RE/B/BSAnimationGraphEvent.h>
+#include <RE/M/MovementControllerNPC.h>
 
 #include <magic_enum.hpp>
 
@@ -62,6 +64,16 @@ namespace SIE
 	void GraphTracker::SetEnableLogging(bool value) 
 	{ 
 		EnableLogging = value;
+	}
+
+	void GraphTracker::SetEventTypeFilter(EventType filter)
+	{
+		EventTypeFilter = filter;
+	}
+
+	GraphTracker::EventType GraphTracker::GetEventTypeFilter() const
+	{
+		return EventTypeFilter;
 	}
 
 	void GraphTracker::SetTarget(RE::TESObjectREFR* aTarget)
@@ -144,6 +156,10 @@ namespace SIE
 				stl::write_thunk_call<ActorMediator_Process>(target.address());
 			}
 		}
+
+		{
+			stl::write_vfunc<MovementControllerNPC_OnMessage>(RE::VTABLE_MovementControllerNPC[0]);
+		}
 	}
 
 	RE::BSEventNotifyControl GraphTracker::TESObjectREFR_ProcessEvent::thunk(
@@ -151,7 +167,9 @@ namespace SIE
 		RE::BSTEventSource<RE::BSAnimationGraphEvent>* eventSource)
 	{
 		if (EnableTracking && Target == reinterpret_cast<RE::TESObjectREFR*>(
-								  (reinterpret_cast<std::ptrdiff_t>(sink) - 0x30)))
+						  (reinterpret_cast<std::ptrdiff_t>(sink) - 0x30)) &&
+			(static_cast<uint32_t>(EventTypeFilter) &
+				static_cast<uint32_t>(EventType::eEventReceived)) != 0)
 		{
 			std::lock_guard lock(Mutex);
 			Events.push_back(
@@ -170,7 +188,9 @@ namespace SIE
 		const RE::BSFixedString& eventName)
 	{
 		if (EnableTracking && Target == reinterpret_cast<RE::TESObjectREFR*>(
-								  (reinterpret_cast<std::ptrdiff_t>(holder) - 0x38)))
+						  (reinterpret_cast<std::ptrdiff_t>(holder) - 0x38)) &&
+			(static_cast<uint32_t>(EventTypeFilter) &
+				static_cast<uint32_t>(EventType::eEventSent)) != 0)
 		{
 			std::lock_guard lock(Mutex);
 			Events.push_back(
@@ -191,7 +211,8 @@ namespace SIE
 		if (EnableTracking && Target == actionData->source.get())
 		{
 			std::lock_guard lock(Mutex);
-			if (processed)
+			if (processed && (static_cast<uint32_t>(EventTypeFilter) &
+								 static_cast<uint32_t>(EventType::eActionProcessed)) != 0)
 			{
 				Events.push_back({ EventType::eActionProcessed,
 					actionData->action->formEditorID.data(), std::chrono::system_clock::now() });
@@ -201,7 +222,8 @@ namespace SIE
 						actionData->action->formEditorID.data());
 				}
 			}
-			else
+			else if ((static_cast<uint32_t>(EventTypeFilter) &
+						 static_cast<uint32_t>(EventType::eActionProcessFailed)) != 0)
 			{
 				Events.push_back({ EventType::eActionProcessFailed,
 					actionData->action->formEditorID.data(), std::chrono::system_clock::now() });
@@ -214,5 +236,26 @@ namespace SIE
 		}
 
 		return processed;
+	}
+
+	void GraphTracker::MovementControllerNPC_OnMessage::thunk(RE::MovementControllerNPC* controller,
+		void* message)
+	{
+		func(controller, message);
+
+		if (controller != nullptr && message != nullptr && EnableTracking &&
+			Target == controller->owner &&
+			(static_cast<uint32_t>(EventTypeFilter) &
+				static_cast<uint32_t>(EventType::eMovementMessageProcessed)) != 0)
+		{
+			std::lock_guard lock(Mutex);
+			const auto& messageTypeName = RTTICache::Instance().GetRTTI(message).typeName;
+			Events.push_back({ EventType::eMovementMessageProcessed, messageTypeName,
+				std::chrono::system_clock::now() });
+			if (EnableLogging)
+			{
+				logger::info("Movement message {} processed", messageTypeName);
+			}
+		}
 	}
 }
