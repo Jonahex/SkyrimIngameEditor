@@ -288,8 +288,7 @@ float3 GetFlowmapNormal(PS_INPUT input, float2 uvShift, float multiplier, float 
 	float2 flowSinCos = flowmapColor.xy * 2 - 1;
 	float2x2 flowRotationMatrix = float2x2(flowSinCos.x, flowSinCos.y, -flowSinCos.y, flowSinCos.x);
 	float2 rotatedFlowVector = mul(transpose(flowRotationMatrix), flowVector);
-	float2 uv = offset + (-float2(multiplier * ((0.001 * ReflectionColor.w) * flowmapColor.w), 0) +
-							 rotatedFlowVector);
+	float2 uv = offset + (rotatedFlowVector - float2(multiplier * ((0.001 * ReflectionColor.w) * flowmapColor.w), 0));
 	return float3(FlowMapNormalsTex.Sample(FlowMapNormalsSampler, uv).xy, flowmapColor.z);
 }
 #endif
@@ -300,14 +299,14 @@ float3 GetWaterNormal(PS_INPUT input, float distanceFactor, float normalsDepthFa
 	float2 normalMul =
 		0.5 + -(-0.5 + abs(frac(input.TexCoord2.zw * (64 * input.TexCoord4)) * 2 - 1));
 	float uvShift = 1 / (128 * input.TexCoord4);
-
+	
 	float3 flowmapNormal0 = GetFlowmapNormal(input, uvShift.xx, 9.92, 0);
 	float3 flowmapNormal1 = GetFlowmapNormal(input, float2(0, uvShift), 10.64, 0.27);
 	float3 flowmapNormal2 = GetFlowmapNormal(input, 0.0.xx, 8, 0);
 	float3 flowmapNormal3 = GetFlowmapNormal(input, float2(uvShift, 0), 8.48, 0.62);
 
 	float2 flowmapNormalWeighted =
-		normalMul.y * ((1 - normalMul.x) * flowmapNormal3.xy + normalMul.x * flowmapNormal2.xy) +
+		normalMul.y * (normalMul.x * flowmapNormal2.xy + (1 - normalMul.x) * flowmapNormal3.xy) +
 		(1 - normalMul.y) *
 			(normalMul.x * flowmapNormal1.xy + (1 - normalMul.x) * flowmapNormal0.xy);
 	float2 flowmapDenominator = sqrt(normalMul * normalMul + (1 - normalMul) * (1 - normalMul));
@@ -377,12 +376,12 @@ float3 GetWaterSpecularColor(PS_INPUT input, float3 normal, float3 viewDirection
 	float3 reflectionColor = CubeMapTex.Sample(CubeMapSampler, cubemapUV).xyz;
 #else
 
-#if NUM_SPECULAR_LIGHTS == 0
+#if !defined(LOD) && NUM_SPECULAR_LIGHTS == 0
 	float4 reflectionNormalRaw =
 		float4((VarAmounts.w * refractionsDepthFactor) * normal.xy + input.MPosition.xy,
 			input.MPosition.z, 1);
 #else
-	float4 reflectionNormalRaw = float4(VarAmounts.w * normal.xy, reflectionNormalZ, 1);
+	float4 reflectionNormalRaw = float4(VarAmounts.w * normal.xy, 0, 1);
 #endif
 
 	float4 reflectionNormal = mul(transpose(TextureProj), reflectionNormalRaw);
@@ -390,7 +389,7 @@ float3 GetWaterSpecularColor(PS_INPUT input, float3 normal, float3 viewDirection
 		ReflectionTex.Sample(ReflectionSampler, reflectionNormal.xy / reflectionNormal.ww).xyz;
 #endif
 
-#if defined(CUBEMAP) && NUM_SPECULAR_LIGHTS == 0
+#if defined(CUBEMAP) && !defined(LOD) && NUM_SPECULAR_LIGHTS == 0
 	float2 ssrReflectionUv = GetDynamicResolutionAdjustedScreenPosition(
 		(DynamicResolutionParams2.xy * input.HPosition.xy) * SSRParams.zw +
 		SSRParams2.x * normal.xy);
@@ -451,13 +450,12 @@ float3 GetWaterDiffuseColor(PS_INPUT input, float3 normal, float3 viewDirection,
 		float2(refractionNormal.x, refractionNormal.w - refractionNormal.y) / refractionNormal.ww;
 
 #if defined(DEPTH)
-	float depth = GetScreenDepth(DynamicResolutionParams1.xy * (DynamicResolutionParams2.xy * input.HPosition.xy));
 	float refractionDepth =
 		GetScreenDepth(DynamicResolutionParams1.xy * (refractionUvRaw / VPOSOffset.xy));
 	float refractionDepthMul = length(
-		float3((refractionDepth * ((VPOSOffset.zw + refractionUvRaw / VPOSOffset.xy) * 2 - 1)) /
+		float3((refractionDepth * ((VPOSOffset.zw + refractionUvRaw) * 2 - 1)) /
 				   ProjData.xy,
-			depth));
+			refractionDepth));
 
 	float3 refractionDepthAdjustedViewDirection = -viewDirection * refractionDepthMul;
 	float refractionViewSurfaceAngle = dot(refractionDepthAdjustedViewDirection, ReflectPlane.xyz);
