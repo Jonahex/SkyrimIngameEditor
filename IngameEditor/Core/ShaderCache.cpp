@@ -850,6 +850,256 @@ namespace SIE
 			defines[0] = { nullptr, nullptr };
 		}
 
+		enum class UtilityShaderFlags : uint64_t
+		{
+			Vc = 1 << 0,
+			Texture = 1 << 1,
+			Skinned = 1 << 2,
+			Normals = 1 << 3,
+			BinormalTangent = 1 << 4,
+			AlphaTest = 1 << 7,
+			LodLandscape = 1 << 8,
+			RenderNormal = 1 << 9,
+			RenderNormalFalloff = 1 << 10,
+			RenderNormalClamp = 1 << 11,
+			RenderNormalClear = 1 << 12,
+			RenderDepth = 1 << 13,
+			RenderShadowmap = 1 << 14,
+			RenderShadowmapClamped = 1 << 15,
+			GrayscaleToAlpha = 1 << 15,
+			RenderShadowmapPb = 1 << 16,
+			AdditionalAlphaMask = 1 << 16,
+			DepthWriteDecals = 1 << 17,
+			DebugShadowSplit = 1 << 18,
+			DebugColor = 1 << 19,
+			GrayscaleMask = 1 << 20,
+			RenderShadowmask = 1 << 21,
+			RenderShadowmaskSpot = 1 << 22,
+			RenderShadowmaskPb = 1 << 23,
+			RenderShadowmaskDpb = 1 << 24,
+			RenderBaseTexture = 1 << 25,
+			TreeAnim = 1 << 26,
+			LodObject = 1 << 27,
+			LocalMapFogOfWar = 1 << 28,
+			OpaqueEffect = 1 << 29,
+		};
+
+		static void GetUtilityShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
+		{
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::Vc))
+			{
+				defines[0] = { "VC", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::Texture))
+			{
+				defines[0] = { "TEXTURE", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::Skinned))
+			{
+				defines[0] = { "SKINNED", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::Normals))
+			{
+				defines[0] = { "NORMALS", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::AlphaTest))
+			{
+				defines[0] = { "ALPHA_TEST", nullptr };
+				++defines;
+			}
+
+			if (descriptor && static_cast<uint32_t>(UtilityShaderFlags::LodLandscape))
+			{
+				if (descriptor &
+					(static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmask) |
+						static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmaskSpot)))
+				{
+					defines[0] = { "FOCUS_SHADOW", nullptr };
+				}
+				else
+				{
+					defines[0] = { "LOD_LANDSCAPE", nullptr };
+				}
+				++defines;
+			}
+
+			if ((descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderNormal)) &&
+				!(descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderNormalClear)))
+			{
+				defines[0] = { "RENDER_NORMAL", nullptr };
+				++defines;
+			}
+			else if (!(descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderNormal)) &&
+					 (descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderNormalClear)))
+			{
+				defines[0] = { "RENDER_NORMAL_CLEAR", nullptr };
+				++defines;
+			}
+			else if ((descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderNormal)) &&
+				(descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderNormalClear)))
+			{
+				defines[0] = { "STENCIL_ABOVE_WATER", nullptr };
+				++defines;
+			}
+
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderNormalFalloff))
+			{
+				defines[0] = { "RENDER_NORMAL_FALLOFF", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderNormalClamp))
+			{
+				defines[0] = { "RENDER_NORMAL_CLAMP", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderDepth))
+			{
+				defines[0] = { "RENDER_DEPTH", nullptr };
+				++defines;
+			}
+			
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::OpaqueEffect))
+			{
+				defines[0] = { "OPAQUE_EFFECT", nullptr };
+				++defines;
+				if (!(descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmap)) &&
+					(descriptor & static_cast<uint32_t>(UtilityShaderFlags::AdditionalAlphaMask)))
+				{
+					defines[0] = { "ADDITIONAL_ALPHA_MASK", nullptr };
+					++defines;
+				}
+				if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::GrayscaleToAlpha))
+				{
+					defines[0] = { "GRAYSCALE_TO_ALPHA", nullptr };
+					++defines;
+				}
+			}
+			else
+			{
+				if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmap))
+				{
+					defines[0] = { "RENDER_SHADOWMAP", nullptr };
+					++defines;
+					if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmapPb))
+					{
+						defines[0] = { "RENDER_SHADOWMAP_PB", nullptr };
+						++defines;
+					}
+				}
+				else if (descriptor &
+						 static_cast<uint32_t>(UtilityShaderFlags::AdditionalAlphaMask))
+				{
+					defines[0] = { "ADDITIONAL_ALPHA_MASK", nullptr };
+					++defines;
+				}
+				if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmapClamped))
+				{
+					defines[0] = { "RENDER_SHADOWMAP_CLAMPED", nullptr };
+					++defines;
+				}
+			}
+
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::GrayscaleMask))
+			{
+				defines[0] = { "GRAYSCALE_MASK", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmask))
+			{
+				defines[0] = { "RENDER_SHADOWMASK", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmaskSpot))
+			{
+				defines[0] = { "RENDER_SHADOWMASKSPOT", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmaskPb))
+			{
+				defines[0] = { "RENDER_SHADOWMASKPB", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmaskDpb))
+			{
+				defines[0] = { "RENDER_SHADOWMASKDPB", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderBaseTexture))
+			{
+				defines[0] = { "RENDER_BASE_TEXTURE", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::TreeAnim))
+			{
+				defines[0] = { "TREE_ANIM", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::LodObject))
+			{
+				defines[0] = { "LOD_OBJECT", nullptr };
+				++defines;
+			}
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::LocalMapFogOfWar))
+			{
+				defines[0] = { "LOCALMAP_FOGOFWAR", nullptr };
+				++defines;
+			}
+
+			if (descriptor & (static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmask) |
+								 static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmaskDpb) |
+								 static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmaskPb) |
+								 static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmaskSpot)))
+			{
+				static constexpr std::array<const char*, 5> shadowFilters = { { "0", "1", "2",
+					"3", "4" } };
+				const size_t shadowFilterIndex = std::clamp((descriptor >> 17) & 0b111, 0u, 4u);
+				defines[0] = { "SHADOWFILTER", shadowFilters[shadowFilterIndex] };
+				++defines;
+			}
+			else if ((!(descriptor & static_cast<uint32_t>(UtilityShaderFlags::OpaqueEffect)) &&
+						 (descriptor &
+							 static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmap))) ||
+					 (descriptor & static_cast<uint32_t>(UtilityShaderFlags::RenderDepth)))
+			{
+				if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::DepthWriteDecals))
+				{
+					defines[0] = { "DEPTH_WRITE_DECALS", nullptr };
+					++defines;
+				}
+			}
+			else
+			{
+				if (descriptor & (static_cast<uint32_t>(UtilityShaderFlags::DepthWriteDecals) |
+									 static_cast<uint32_t>(UtilityShaderFlags::DebugColor)))
+				{
+					defines[0] = { "DEBUG_COLOR", nullptr };
+					++defines;
+				}
+				if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::DebugShadowSplit))
+				{
+					defines[0] = { "DEBUG_SHADOWSPLIT", nullptr };
+					++defines;
+				}
+			}
+
+			defines[0] = { "SHADOWSPLITCOUNT", "3" };
+			++defines;
+
+			if ((descriptor & 0x14000) != 0x14000 &&
+				((descriptor & 0x20004000) == 0x4000 || (descriptor & 0x1E02000) == 0x2000) &&
+				!(descriptor & 0x80) && (descriptor & 0x14000) != 0x10000)
+			{
+				defines[0] = { "NO_PIXEL_SHADER", nullptr };
+				++defines;
+			}
+
+			defines[0] = { nullptr, nullptr };
+		}
+
 		static void GetShaderDefines(RE::BSShader::Type type, uint32_t descriptor,
 			D3D_SHADER_MACRO* defines)
 		{
@@ -881,6 +1131,9 @@ namespace SIE
 				break;
 			case RE::BSShader::Type::Effect:
 				GetEffectShaderDefines(descriptor, defines);
+				break;
+			case RE::BSShader::Type::Utility:
+				GetUtilityShaderDefines(descriptor, defines);
 				break;
 			}
 		}
@@ -1143,6 +1396,39 @@ namespace SIE
 				{ "SSRParams2", 22 },
 				{ "NormalsAmplitude", 23 },
 				{ "VPOSOffset", 24 },
+			};
+
+			auto& utilityVS = result[static_cast<size_t>(RE::BSShader::Type::Utility)]
+									[static_cast<size_t>(ShaderClass::Vertex)];
+			utilityVS = {
+				{ "World", 0 },
+				{ "TexcoordOffset", 1 },
+				{ "EyePos", 2 },
+				{ "HighDetailRange", 3 },
+				{ "ParabolaParam", 4 },
+				{ "ShadowFadeParam", 5 },
+				{ "TreeParams", 6 },
+				{ "WaterParams", 7 },
+				{ "Bones", 8 },
+			};
+
+			auto& utilityPS = result[static_cast<size_t>(RE::BSShader::Type::Utility)]
+								  [static_cast<size_t>(ShaderClass::Pixel)];
+			utilityPS = {
+				{ "AlphaTestRef", 0 },
+				{ "RefractionPower", 1 },
+				{ "DebugColor", 2 },
+				{ "BaseColor", 3 },
+				{ "PropertyColor", 4 },
+				{ "FocusShadowMapProj", 5 },
+				{ "ShadowMapProj", 6 },
+				{ "ShadowSampleParam", 7 },
+				{ "ShadowLightParam", 8 },
+				{ "ShadowFadeParam", 9 },
+				{ "VPOSOffset", 10 },
+				{ "EndSplitDistances", 11 },
+				{ "StartSplitDistances", 12 },
+				{ "FocusShadowFadeParam", 13 },
 			};
 
 			return result;

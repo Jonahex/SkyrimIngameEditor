@@ -1,8 +1,13 @@
+#include "Common/FrameBuffer.hlsl"
+#include "Common/LodLandscape.hlsl"
+#include "Common/MotionBlur.hlsl"
+#include "Common/Skinned.hlsl"
+
 #if (defined(TREE_ANIM) || defined(LANDSCAPE)) && !defined(VC)
 #define VC
 #endif
 
-#if defined(SPECULAR) || defined(AMBIENT_SPECULAR) || defined(ENVMAP) || defined(RIM_LIGHTING) || defined(PARALLAX) || defined(MULTI_LAYER_PARALLAX) || defined(FACEGEN) || defined(FACEGEN_RGB_TINT) || defined(SNOW_FLAG) || defined(EYE) || defined(PBR)
+#if defined(SPECULAR) || defined(AMBIENT_SPECULAR) || defined(ENVMAP) || defined(RIM_LIGHTING) || defined(PARALLAX) || defined(MULTI_LAYER_PARALLAX) || defined(FACEGEN) || defined(FACEGEN_RGB_TINT) || defined(SNOW_FLAG) || defined(EYE)
 #define HAS_VIEW_VECTOR
 #endif
 
@@ -70,16 +75,6 @@ struct VS_OUTPUT
 };
 
 #ifdef VSHADER
-cbuffer PerFrame									: register(b12)
-{
-	row_major float3x3 ScreenProj					: packoffset(c0);
-	row_major float4x4 ViewProj						: packoffset(c8);
-#if defined (SKINNED)
-	float3 BonesPivot								: packoffset(c40);
-	float3 PreviousBonesPivot						: packoffset(c41);
-#endif
-};
-
 cbuffer PerTechnique								: register(b0)
 {
 	float4 HighDetailRange							: packoffset(c0);	// loaded cells center in xy, size in zw
@@ -108,18 +103,6 @@ cbuffer PerGeometry									: register(b2)
 	float4 WorldMapOverlayParameters				: packoffset(c14);
 };
 
-#if defined (SKINNED)
-cbuffer PreviousBonesBuffer							: register(b9)
-{
-	float4 PreviousBones[240]						: packoffset(c0);
-}
-
-cbuffer BonesBuffer									: register(b10)
-{
-	float4 Bones[240]								: packoffset(c0);
-}
-#endif
-
 #if defined (TREE_ANIM)
 float2 GetTreeShiftVector(float4 position, float4 color)
 {
@@ -131,58 +114,6 @@ float2 GetTreeShiftVector(float4 position, float4 color)
 }
 #endif
 
-#if defined (SKINNED)
-float3x4 GetBoneMatrix(float4 bones[240], int4 actualIndices, float3 pivot, float4 weights)
-{
-	/*float3x4 result;
-	for (int rowIndex = 0; rowIndex < 3; ++rowIndex)
-	{
-		float4 pivotRow = float4(0, 0, 0, pivot[rowIndex]);
-		result[rowIndex] = 0.0.xxxx;
-		for (int boneIndex = 0; boneIndex < 4; ++boneIndex)
-		{
-			result[rowIndex] += (bones[actualIndices[boneIndex] + rowIndex] - pivotRow) * weights[boneIndex];
-		}
-	}
-	return result;*/
-
-	float3x4 pivotMatrix = transpose(float4x3(0.0.xxx, 0.0.xxx, 0.0.xxx, pivot));
-
-	float3x4 boneMatrix1 =
-		float3x4(bones[actualIndices.x], bones[actualIndices.x + 1], bones[actualIndices.x + 2]);
-	float3x4 boneMatrix2 =
-		float3x4(bones[actualIndices.y], bones[actualIndices.y + 1], bones[actualIndices.y + 2]);
-	float3x4 boneMatrix3 =
-		float3x4(bones[actualIndices.z], bones[actualIndices.z + 1], bones[actualIndices.z + 2]);
-	float3x4 boneMatrix4 =
-		float3x4(bones[actualIndices.w], bones[actualIndices.w + 1], bones[actualIndices.w + 2]);
-
-	float3x4 unitMatrix = float3x4(1.0.xxxx, 1.0.xxxx, 1.0.xxxx);
-	float3x4 weightMatrix1 = unitMatrix * weights.x;
-	float3x4 weightMatrix2 = unitMatrix * weights.y;
-	float3x4 weightMatrix3 = unitMatrix * weights.z;
-	float3x4 weightMatrix4 = unitMatrix * weights.w;
-
-	return (boneMatrix1 - pivotMatrix) * weightMatrix1 +
-	       (boneMatrix2 - pivotMatrix) * weightMatrix2 +
-	       (boneMatrix3 - pivotMatrix) * weightMatrix3 +
-	       (boneMatrix4 - pivotMatrix) * weightMatrix4;
-}
-
-float3x3 GetBoneRSMatrix(float4 bones[240], int4 actualIndices, float4 weights)
-{
-	float3x3 result;
-	for (int rowIndex = 0; rowIndex < 3; ++rowIndex)
-	{
-		result[rowIndex] = weights.xxx * bones[actualIndices.x + rowIndex].xyz +
-		                   weights.yyy * bones[actualIndices.y + rowIndex].xyz +
-		                   weights.zzz * bones[actualIndices.z + rowIndex].xyz +
-		                   weights.www * bones[actualIndices.w + rowIndex].xyz;
-	}
-	return result;
-}
-#endif
-
 VS_OUTPUT main(VS_INPUT input)
 {
 	VS_OUTPUT vsout;
@@ -190,13 +121,7 @@ VS_OUTPUT main(VS_INPUT input)
 	precise float4 inputPosition = float4(input.Position.xyz, 1.0);
 
 #if defined (LODLANDNOISE) || defined(LODLANDSCAPE)
-	float4 rawWorldPosition = float4(mul(World, inputPosition), 1);
-	float worldXShift = rawWorldPosition.x - HighDetailRange.x;
-	float worldYShift = rawWorldPosition.y - HighDetailRange.y;
-	if ((abs(worldXShift) < HighDetailRange.z) && (abs(worldYShift) < HighDetailRange.w))
-	{
-		inputPosition.z -= (230 + rawWorldPosition.z / 1e9);
-	}
+	inputPosition = AdjustLodLandscapeVertexPositionMS(inputPosition, World, HighDetailRange);
 #endif
 	
 	precise float4 previousInputPosition = inputPosition;
@@ -213,19 +138,19 @@ VS_OUTPUT main(VS_INPUT input)
 	precise int4 actualIndices = 765.01.xxxx * input.BoneIndices.xyzw;
 
 	float3x4 previousWorldMatrix =
-		GetBoneMatrix(PreviousBones, actualIndices, PreviousBonesPivot, input.BoneWeights);
+		GetBoneTransformMatrix(PreviousBones, actualIndices, CameraPreviousPosAdjust, input.BoneWeights);
 	precise float4 previousWorldPosition =
 		float4(mul(inputPosition, transpose(previousWorldMatrix)), 1);
 
-	float3x4 worldMatrix = GetBoneMatrix(Bones, actualIndices, BonesPivot, input.BoneWeights);
+	float3x4 worldMatrix = GetBoneTransformMatrix(Bones, actualIndices, CameraPosAdjust, input.BoneWeights);
 	precise float4 worldPosition = float4(mul(inputPosition, transpose(worldMatrix)), 1);
 
-	float4 viewPos = mul(ViewProj, worldPosition);
+	float4 viewPos = mul(CameraViewProj, worldPosition);
 #else
 	precise float4 previousWorldPosition = float4(mul(PreviousWorld, inputPosition), 1);
 	precise float4 worldPosition = float4(mul(World, inputPosition), 1);
 	precise float4x4 world4x4 = float4x4(World[0], World[1], World[2], float4(0, 0, 0, 1));
-	precise float4x4 modelView = mul(ViewProj, world4x4);
+	precise float4x4 modelView = mul(CameraViewProj, world4x4);
 	float4 viewPos = mul(modelView, inputPosition);
 #endif
 
@@ -239,7 +164,7 @@ VS_OUTPUT main(VS_INPUT input)
 	previousWorldPosition =
 		float4(mul(inputPosition, transpose(previousWorldMatrix)), 1);
 	worldPosition = float4(mul(inputPosition, transpose(worldMatrix)), 1);
-	viewPos = mul(ViewProj, worldPosition);
+	viewPos = mul(CameraViewProj, worldPosition);
 #else
 	previousWorldPosition = float4(mul(PreviousWorld, inputPosition), 1);
 	worldPosition = float4(mul(World, inputPosition), 1);
@@ -247,10 +172,10 @@ VS_OUTPUT main(VS_INPUT input)
 #endif
 #endif
 
-	vsout.Position = viewPos;
-
 #if defined (LODLANDNOISE) || defined (LODLANDSCAPE)
-	vsout.Position.z += min(1, 1e-4 * max(0, viewPos.z - 70000)) * 0.5;
+	vsout.Position = AdjustLodLandscapeVertexPositionCS(viewPos);
+#else
+	vsout.Position = viewPos;
 #endif
 	
 	float2 uv = input.TexCoord0.xy * TexcoordOffset.zw + TexcoordOffset.xy;
@@ -335,13 +260,13 @@ VS_OUTPUT main(VS_INPUT input)
 #endif
 	
 #if defined (SKINNED)
-	float3x3 ScreenNormalTransform = mul(ScreenProj, worldTbnTr);
+	float3x3 ScreenNormalTransform = mul(CameraView, worldTbnTr);
 
 	vsout.ScreenNormalTransform0.xyz = ScreenNormalTransform[0];
 	vsout.ScreenNormalTransform1.xyz = ScreenNormalTransform[1];
 	vsout.ScreenNormalTransform2.xyz = ScreenNormalTransform[2];
 #else
-	float3x4 transMat = mul(ScreenProj, World);
+	float3x4 transMat = mul(CameraView, World);
 	
 #if defined(MODELSPACENORMALS)
 	vsout.ScreenNormalTransform0.xyz = transMat[0].xyz;
@@ -415,9 +340,6 @@ SamplerState SampDetailSampler						: register(s4);
 SamplerState SampParallaxSampler					: register(s3);
 #elif defined (PROJECTED_UV) && !defined(SPARKLE)
 SamplerState SampProjDiffuseSampler					: register(s3);
-#endif
-#if defined (PBR)
-SamplerState SampRMAOSampler						: register(s6);
 #endif
 #if (defined (ENVMAP) || defined(MULTI_LAYER_PARALLAX) || defined(SNOW_FLAG) || defined(EYE)) && !defined(FACEGEN)
 SamplerState SampEnvSampler							: register(s4);
@@ -494,9 +416,6 @@ Texture2D<float4> TexParallaxSampler				: register(t3);
 #elif defined (PROJECTED_UV) && !defined(SPARKLE)
 Texture2D<float4> TexProjDiffuseSampler				: register(t3);
 #endif
-#if defined (PBR)
-Texture2D<float4> TexRMAOSampler					: register(t6);
-#endif
 #if (defined (ENVMAP) || defined(MULTI_LAYER_PARALLAX) || defined(SNOW_FLAG) || defined(EYE)) && !defined(FACEGEN)
 TextureCube<float4> TexEnvSampler					: register(t4);
 Texture2D<float4> TexEnvMaskSampler					: register(t5);
@@ -540,15 +459,6 @@ Texture2D<float4> TexLandLodNoiseSampler			: register(t15);
 #if defined (DEFSHADOW)
 Texture2D<float4> TexShadowMaskSampler				: register(t14);
 #endif
-
-cbuffer PerFrame									: register(b12)
-{
-	float4 UnknownPerFrame1[12]						: packoffset(c0);
-	row_major float4x4 ScreenProj					: packoffset(c12);
-	row_major float4x4 PreviousScreenProj			: packoffset(c16);
-	float4 UnknownPerFrame2[23]						: packoffset(c20);
-	float4 UnknownPerFrame3[2]						: packoffset(c43);
-};
 
 cbuffer PerTechnique								: register(b0)
 {
@@ -664,80 +574,6 @@ float3 GetLightSpecularInput(PS_INPUT input, float3 L, float3 V, float3 N, float
 float3 TransformNormal(float3 normal)
 {
     return normal * 2 + -1.0.xxx;
-}
-
-float3 fresnelSchlick(float cosTheta, float3 F0)
-{
-    return F0 + (1 - F0) * pow(saturate(1 - cosTheta), 5);
-}
-
-static const float PI = 3.14159265;
-
-float DistributionGGX(float NdotH, float roughness)
-{
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float NdotH2 = NdotH * NdotH;
-	
-    float num = a2;
-    float denom = (NdotH2 * (a2 - 1) + 1);
-    denom = PI * denom * denom;
-	
-    return num / denom;
-}
-
-float GeometrySchlickGGX(float cosTheta, float roughness)
-{
-    float r = (roughness + 1);
-    float k = (r * r) / 8;
-
-    float num = cosTheta;
-    float denom = cosTheta * (1 - k) + k;
-	
-    return num / denom;
-}
-
-float GeometrySmith(float NdotV, float NdotL, float roughness)
-{
-    float ggxV = GeometrySchlickGGX(NdotV, roughness);
-    float ggxL = GeometrySchlickGGX(NdotL, roughness);
-	
-    return ggxV * ggxL;
-}
-
-float OrenNayarDiffuseCoefficient(float roughness, float3 N, float3 L, float3 V, float NdotL, float NdotV)
-{
-    float gamma = dot(V - N * NdotV, L - N * NdotL);
-    float a = roughness * roughness;
-    float A = 1 - 0.5 * (a / (a + 0.57));
-    float B = 0.45 * (a / (a + 0.09));
-    float C = sqrt((1 - NdotV * NdotV) * (1 - NdotL * NdotL)) / max(NdotV, NdotL);
-    return (A + B * max(0.0f, gamma) * C) / PI;
-
-}
-
-float3 GetLightRadiance(float3 N, float3 L, float3 V, float3 F0, float3 originalRadiance, float3 albedo, float roughness, float metallic)
-{
-    float3 radiance = PI * originalRadiance;
-	
-    float3 H = normalize(V + L);
-    float NdotL = dot(N, L);
-    float NdotV = dot(N, V);
-    float HdotV = dot(H, V);
-    float NdotH = dot(N, H);
-        
-    float NDF = DistributionGGX(saturate(NdotH), roughness);
-    float G = GeometrySmith(saturate(NdotV), saturate(NdotL), roughness);
-    float3 F = fresnelSchlick(saturate(HdotV), F0);
-        
-    float3 kD = (1 - F) * (1 - metallic);
-        
-    float3 numerator = NDF * G * F;
-    float denominator = 4 * saturate(NdotV) * saturate(NdotL) + 0.0001;
-    float3 specular = numerator / denominator;
-            
-    float diffuseValue = OrenNayarDiffuseCoefficient(roughness, N, L, V, NdotL, NdotV);
-    return (kD * diffuseValue * albedo + specular) * saturate(NdotL) * radiance;
 }
 
 float GetLodLandBlendParameter(float3 color)
@@ -999,26 +835,6 @@ PS_OUTPUT main(PS_INPUT input)
 	normal.xyz = GetWorldMapNormal(input, normal.xyz, rawBaseColor.xyz);
 #endif
 	
-#if defined (PBR)
-    //float3 rmaoColor = TexRMAOSampler.Sample(SampRMAOSampler, uv).xyz;
-    //float roughness = rmaoColor.x;
-    //float metallic = rmaoColor.y;
-    //float ao = rmaoColor.z;
-	
-    float roughness = 1 - glossiness;
-    float metallic = 0;
-#if defined (ENVMAP)
-	float envMaskColor = TexEnvMaskSampler.Sample(SampEnvMaskSampler, uv).x;
-	metallic = envMaskColor * EnvmapData.x;
-#endif
-    float ao = 1;
-	
-    float3 F0 = 0.04.xxx;
-    F0 = lerp(F0, baseColor.xyz, metallic);
-	
-    float3 totalRadiance = 0.0.xxx;
-#endif
-	
 #if defined (FACEGEN)
 	baseColor.xyz = GetFacegenBaseColor(baseColor.xyz, uv);
 #elif defined(FACEGEN_RGB_TINT)
@@ -1124,8 +940,8 @@ PS_OUTPUT main(PS_INPUT input)
 	if (numShadowLights > 0)
 #endif
 	{
-		baseShadowUV = input.Position.xy * UnknownPerFrame3[1].xy;
-		float2 shadowUV = min(float2(UnknownPerFrame3[1].z, UnknownPerFrame3[0].y), max(0.0.xx, UnknownPerFrame3[0].xy * (baseShadowUV * VPOSOffset.xy + VPOSOffset.zw)));
+		baseShadowUV = input.Position.xy * DynamicResolutionParams2.xy;
+		float2 shadowUV = GetDynamicResolutionAdjustedScreenPosition(baseShadowUV * VPOSOffset.xy + VPOSOffset.zw);
 		shadowColor = TexShadowMaskSampler.Sample(SampShadowMaskSampler, shadowUV);
 	}
 #if !defined (SHADOW_DIR)
@@ -1224,9 +1040,6 @@ PS_OUTPUT main(PS_INPUT input)
 	dirLightColor *= shadowColor.xxx;
 #endif
 	
-#if defined(PBR)
-    totalRadiance += GetLightRadiance(modelNormal.xyz, DirLightDirection.xyz, viewDirection, F0, dirLightColor.xyz, baseColor.xyz, roughness, metallic);
-#else
 	float3 diffuseColor = 0.0.xxx;
 	float3 specularColor = 0.0.xxx;
 	
@@ -1262,7 +1075,6 @@ PS_OUTPUT main(PS_INPUT input)
 	}
 	
 	lightsDiffuseColor += dirDiffuseColor;
-#endif
 		
     if (numLights > 0)
     {
@@ -1293,9 +1105,6 @@ PS_OUTPUT main(PS_INPUT input)
 			
             float3 normalizedLightDirection = normalize(lightDirection);
 			
-#if defined(PBR)
-            totalRadiance += GetLightRadiance(modelNormal.xyz, normalizedLightDirection, viewDirection, F0, lightColor * intensityMultiplier.xxx, baseColor.xyz, roughness, metallic);
-#else
 			float lightAngle = dot(modelNormal.xyz, normalizedLightDirection.xyz);
 			float3 lightDiffuseColor = lightColor * saturate(lightAngle.xxx);
 			
@@ -1316,18 +1125,8 @@ PS_OUTPUT main(PS_INPUT input)
 #endif
 			
 			lightsDiffuseColor += lightDiffuseColor * intensityMultiplier.xxx;
-#endif
         }
     }
-	
-#if defined (PBR)
-	//float3 ambientColor = 0.03 * baseColor.xyz * ao;
-    float3 ambientColor = (mul(DirectionalAmbient, modelNormal) + IBLParams.yzw * IBLParams.xxx) * baseColor.xyz * ao;
-    float3 color = ambientColor + totalRadiance;
-	
-	//color = color / (color + 1.0);
-	//color = pow(color, 1.0 / 2.2);
-#else
 	
 	diffuseColor += lightsDiffuseColor;
 	specularColor += lightsSpecularColor;
@@ -1365,8 +1164,6 @@ PS_OUTPUT main(PS_INPUT input)
 	float4 color;
 	color.xyz = diffuseColor * baseColor.xyz;
 
-#endif
-
 #if defined(HAIR)
 	float3 vertexColor = (input.Color.yyy * (TintColor.xyz - 1.0.xxx) + 1.0.xxx) * color.xyz;
 #else
@@ -1385,19 +1182,14 @@ PS_OUTPUT main(PS_INPUT input)
 	vertexColor = (saturate(viewNormalAngle) * (1 - baseColor.w)).xxx * ((directionalAmbientColor + lightsDiffuseColor) * (input.Color.xyz * layerColor) - vertexColor) + vertexColor;
 #endif
 	
-    float4 screenPosition = mul(ScreenProj, input.WorldPosition);
-    screenPosition.xy = screenPosition.xy / screenPosition.ww;
-    float4 previousScreenPosition = mul(PreviousScreenProj, input.PreviousWorldPosition);
-    previousScreenPosition.xy = previousScreenPosition.xy / previousScreenPosition.ww;
-    float2 screenMotionVector = float2(-0.5, 0.5) * (screenPosition.xy - previousScreenPosition.xy);
+    float2 screenMotionVector = GetSSMotionVector(input.WorldPosition, input.PreviousWorldPosition);
 	
-#if !defined(PBR)
 #if defined (SPECULAR)
 	specularColor = (specularColor * glossiness * MaterialData.yyy) * SpecularColor.xyz;
 #elif defined(SPARKLE)
 	specularColor *= glossiness;
 #endif
-#endif
+
 	if (useSnowSpecular)
 	{
 		specularColor = 0;
@@ -1410,29 +1202,26 @@ PS_OUTPUT main(PS_INPUT input)
 	specularColor += ambientSpecularColor * ambientSpecularColorMultiplier.xxx;
 #endif
 	
-#if !defined(PBR) && (defined (ENVMAP) || defined (MULTI_LAYER_PARALLAX) || defined(EYE))
+#if defined (ENVMAP) || defined (MULTI_LAYER_PARALLAX) || defined(EYE)
 	vertexColor += diffuseColor * envColor;
 #endif
 	
     color.xyz = lerp(vertexColor.xyz, input.FogParam.xyz, input.FogParam.w);
     color.xyz = vertexColor.xyz - color.xyz * FogColor.w;
 	
-    float3 tmpColor = color.xyz * UnknownPerFrame2[22].yyy;
+    float3 tmpColor = color.xyz * FrameParams.yyy;
     color.xyz = tmpColor.xyz + ColourOutputClamp.xxx;
     color.xyz = min(vertexColor.xyz, color.xyz);
 	
-#if !defined(PBR)
 	color.xyz += specularColor;
 	
 #if defined (SPECULAR) || defined(AMBIENT_SPECULAR)	|| defined(SPARKLE)
 	float3 specularTmp = lerp(color.xyz, input.FogParam.xyz, input.FogParam.w);
 	specularTmp = color.xyz - specularTmp.xyz * FogColor.w;
 	
-	tmpColor = specularTmp.xyz * UnknownPerFrame2[22].yyy;
+	tmpColor = specularTmp.xyz * FrameParams.yyy;
 	specularTmp.xyz = tmpColor.xyz + ColourOutputClamp.zzz;
 	color.xyz = min(specularTmp.xyz, color.xyz);
-#endif
-
 #endif
 	
 #if defined (LANDSCAPE) && !defined(LOD_LAND_BLEND)
@@ -1491,7 +1280,7 @@ PS_OUTPUT main(PS_INPUT input)
 	
 #endif
 	
-    psout.Albedo.xyz = color.xyz - tmpColor.xyz * UnknownPerFrame2[22].zzz;
+    psout.Albedo.xyz = color.xyz - tmpColor.xyz * FrameParams.zzz;
 
 #if defined (SNOW)
 	psout.SnowParameters.x = dot(lightsSpecularColor, float3(0.3, 0.59, 0.11));

@@ -1,3 +1,7 @@
+#include "Common/FrameBuffer.hlsl"
+#include "Common/MotionBlur.hlsl"
+#include "Common/Skinned.hlsl"
+
 struct VS_INPUT
 {
 	float4 Position											: POSITION0;
@@ -70,18 +74,6 @@ struct VS_OUTPUT
 };
 
 #ifdef VSHADER
-cbuffer PerFrame											: register(b12)
-{
-	row_major float4x3 ScreenProj							: packoffset(c0);
-	row_major float4x4 ViewProj								: packoffset(c8);
-#if defined (SKINNED)
-	float3 BonesPivot										: packoffset(c40);
-#if defined(MOTIONVECTORS_NORMALS)
-	float3 PreviousBonesPivot								: packoffset(c41);
-#endif
-#endif
-};
-
 cbuffer PerTechnique										: register(b0)
 {
 	float4 FogParam											: packoffset(c0);
@@ -110,60 +102,6 @@ cbuffer IndexedTexcoordBuffer								: register(b11)
 {
 	float4 IndexedTexCoord[128]								: packoffset(c0);
 }
-
-#if defined (SKINNED)
-#if defined(MOTIONVECTORS_NORMALS)
-cbuffer PreviousBonesBuffer									: register(b9)
-{
-	float4 PreviousBones[240]								: packoffset(c0);
-}
-#endif
-
-cbuffer BonesBuffer											: register(b10)
-{
-	float4 Bones[240]										: packoffset(c0);
-}
-#endif
-
-#if defined (SKINNED)
-float3x4 GetBoneTransformMatrix(float4 bones[240], int4 actualIndices, float3 pivot, float4 weights)
-{
-	float3x4 pivotMatrix = transpose(float4x3(0.0.xxx, 0.0.xxx, 0.0.xxx, pivot));
-
-	float3x4 boneMatrix1 =
-		float3x4(bones[actualIndices.x], bones[actualIndices.x + 1], bones[actualIndices.x + 2]);
-	float3x4 boneMatrix2 =
-		float3x4(bones[actualIndices.y], bones[actualIndices.y + 1], bones[actualIndices.y + 2]);
-	float3x4 boneMatrix3 =
-		float3x4(bones[actualIndices.z], bones[actualIndices.z + 1], bones[actualIndices.z + 2]);
-	float3x4 boneMatrix4 =
-		float3x4(bones[actualIndices.w], bones[actualIndices.w + 1], bones[actualIndices.w + 2]);
-
-	float3x4 unitMatrix = float3x4(1.0.xxxx, 1.0.xxxx, 1.0.xxxx);
-	float3x4 weightMatrix1 = unitMatrix * weights.x;
-	float3x4 weightMatrix2 = unitMatrix * weights.y;
-	float3x4 weightMatrix3 = unitMatrix * weights.z;
-	float3x4 weightMatrix4 = unitMatrix * weights.w;
-
-	return (boneMatrix1 - pivotMatrix) * weightMatrix1 +
-	       (boneMatrix2 - pivotMatrix) * weightMatrix2 +
-	       (boneMatrix3 - pivotMatrix) * weightMatrix3 +
-	       (boneMatrix4 - pivotMatrix) * weightMatrix4;
-}
-
-float3x3 GetBoneRSMatrix(float4 bones[240], int4 actualIndices, float4 weights)
-{
-	float3x3 result;
-	for (int rowIndex = 0; rowIndex < 3; ++rowIndex)
-	{
-		result[rowIndex] = weights.xxx * bones[actualIndices.x + rowIndex].xyz +
-		                   weights.yyy * bones[actualIndices.y + rowIndex].xyz +
-		                   weights.zzz * bones[actualIndices.z + rowIndex].xyz +
-		                   weights.www * bones[actualIndices.w + rowIndex].xyz;
-	}
-	return result;
-}
-#endif
 
 #define M_HALFPI 1.57079637;
 #define M_PI 3.141593
@@ -226,21 +164,21 @@ VS_OUTPUT main(VS_INPUT input)
 		transpose(float3x3(transpose(World)[0], transpose(World)[1], transpose(World)[2]));
 
 #if defined(SKY_OBJECT)
-	float4x4 viewProj = float4x4(ViewProj[0], ViewProj[1], ViewProj[3], ViewProj[3]);
+	float4x4 viewProj = float4x4(CameraViewProj[0], CameraViewProj[1], CameraViewProj[3], CameraViewProj[3]);
 #else
-	float4x4 viewProj = ViewProj;
+	float4x4 viewProj = CameraViewProj;
 #endif
 	
 #if defined (SKINNED)
 	precise int4 actualIndices = 765.01.xxxx * input.BoneIndices.xyzw;
 #if defined(MOTIONVECTORS_NORMALS)
 	float3x4 previousBoneTransformMatrix =
-		GetBoneTransformMatrix(PreviousBones, actualIndices, PreviousBonesPivot, input.BoneWeights);
+		GetBoneTransformMatrix(PreviousBones, actualIndices, CameraPreviousPosAdjust, input.BoneWeights);
 	precise float4 previousWorldPosition =
 		float4(mul(inputPosition, transpose(previousBoneTransformMatrix)), 1);
 #endif
 	float3x4 boneTransformMatrix =
-		GetBoneTransformMatrix(Bones, actualIndices, BonesPivot, input.BoneWeights);
+		GetBoneTransformMatrix(Bones, actualIndices, CameraPosAdjust, input.BoneWeights);
 	precise float4 worldPosition = float4(mul(inputPosition, transpose(boneTransformMatrix)), 1);
 	float4 viewPos = mul(viewProj, worldPosition);
 #else
@@ -390,7 +328,7 @@ VS_OUTPUT main(VS_INPUT input)
 #elif defined(FALLOFF) || (defined(SKINNED) && defined(MEMBRANE))
 	float3 screenSpaceNormal = worldNormal;
 #else
-	float4x3 modelScreen = mul(ScreenProj, world3x3);
+	float4x3 modelScreen = mul(CameraView, world3x3);
 	float3 screenSpaceNormal = normalize(mul(modelScreen, normal)).xyz;
 #endif
 
@@ -442,12 +380,6 @@ struct PS_OUTPUT
 };
 
 #ifdef PSHADER
-cbuffer PerFrame									: register(b12)
-{
-	row_major float4x4 ScreenProj					: packoffset(c12);
-	row_major float4x4 PreviousScreenProj			: packoffset(c16);
-};
-
 cbuffer AlphaTestRefBuffer							: register(b11)
 {
     float AlphaTestRef1								: packoffset(c0);
@@ -637,13 +569,7 @@ PS_OUTPUT main(PS_INPUT input)
 
 	
 #if defined (MOTIONVECTORS_NORMALS)
-	float4 screenPosition = mul(ScreenProj, input.WorldPosition);
-	screenPosition.xy = screenPosition.xy / screenPosition.ww;
-	float4 previousScreenPosition = mul(PreviousScreenProj, input.PreviousWorldPosition);
-	previousScreenPosition.xy = previousScreenPosition.xy / previousScreenPosition.ww;
-	float2 screenMotionVector = float2(-0.5, 0.5) * (screenPosition.xy - previousScreenPosition.xy);
-
-	psout.MotionVectors = screenMotionVector;
+	psout.MotionVectors = GetMotionVectorCS(input.WorldPosition, input.PreviousWorldPosition);
 
 #if (defined(MEMBRANE) && (defined(SKINNED) || defined(NORMALS)))
 	float3 screenSpaceNormal = normalize(input.TBN0);

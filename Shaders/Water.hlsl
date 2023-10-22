@@ -596,7 +596,7 @@ PS_OUTPUT main(PS_INPUT input)
 	float VdotN = dot(viewDirection, normal);
 	psout.WaterMask = float4(0, 0, VdotN, 0);
 
-	psout.MotionVector = GetSSMotionVector(input.WorldPosition, input.PreviousWorldPosition);
+	psout.MotionVector = GetMotionVectorCS(input.WorldPosition, input.PreviousWorldPosition);
 #endif
 
 	return psout;

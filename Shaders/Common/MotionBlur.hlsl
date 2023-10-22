@@ -1,8 +1,8 @@
-float2 GetSSMotionVector(float4 wsPosition, float4 previousWSPosition)
+float2 GetMotionVectorCS(float4 positionWS, float4 previousPositionWS)
 {
-	float4 screenPosition = mul(CameraViewProjUnjittered, wsPosition);
-	screenPosition.xy = screenPosition.xy / screenPosition.ww;
-	float4 previousScreenPosition = mul(CameraPreviousViewProjUnjittered, previousWSPosition);
-	previousScreenPosition.xy = previousScreenPosition.xy / previousScreenPosition.ww;
-	return float2(-0.5, 0.5) * (screenPosition.xy - previousScreenPosition.xy);
+    float4 positionCS = mul(CameraViewProjUnjittered, positionWS);
+    positionCS.xy = positionCS.xy / positionCS.ww;
+    float4 previousPositionCS = mul(CameraPreviousViewProjUnjittered, previousPositionWS);
+    previousPositionCS.xy = previousPositionCS.xy / previousPositionCS.ww;
+    return float2(-0.5, 0.5) * (positionCS.xy - previousPositionCS.xy);
 }
