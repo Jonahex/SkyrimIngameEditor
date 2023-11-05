@@ -9,6 +9,7 @@
 #include <RE/B/BSEffectShaderMaterial.h>
 #include <RE/B/BSFadeNode.h>
 #include <RE/B/BSFurnitureMarkerNode.h>
+#include <RE/B/BSInvMarker.h>
 #include <RE/B/BSLagBoneController.h>
 #include <RE/B/BSLightingShaderMaterialEnvmap.h>
 #include <RE/B/BSLightingShaderMaterialEye.h>
@@ -1450,6 +1451,24 @@ namespace SIE
 			return wasEdited;
 		}
 
+		static bool BSInvMarkerEditor(void* object, void* context)
+		{
+			auto& invMarker = *static_cast<RE::BSInvMarker*>(object);
+
+			bool wasEdited = false;
+
+			if (ImGui::DragFloat("Zoom", &invMarker.zoom, 0.1f))
+			{
+				wasEdited = true;
+			}
+			if (ImGui::DragScalarN("Rotation", ImGuiDataType_U16, &invMarker.rotationX, 3))
+			{
+				wasEdited = true;
+			}
+
+			return wasEdited;
+		}
+
 		static bool NiPSysModifierEditor(void* object, void* context)
 		{
 			auto& modifier = *static_cast<RE::NiPSysModifier*>(object);
@@ -2463,6 +2482,8 @@ namespace SIE
 			SNiObjectEditor::NiStringExtraDataEditor);
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSFurnitureMarkerNode),
 			SNiObjectEditor::BSFurnitureMarkerNodeEditor);
+		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSInvMarker),
+			SNiObjectEditor::BSInvMarkerEditor);
 
 		rttiCache.RegisterEditor(*REL::Relocation<TypeDescriptor*>(RE::RTTI_BSShaderTextureSet),
 			SNiObjectEditor::BSShaderTextureSetEditor);

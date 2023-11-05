@@ -121,7 +121,7 @@ VS_OUTPUT main(VS_INPUT input)
 	precise float4 inputPosition = float4(input.Position.xyz, 1.0);
 
 #if defined (LODLANDNOISE) || defined(LODLANDSCAPE)
-	inputPosition = AdjustLodLandscapeVertexPositionMS(inputPosition, World, HighDetailRange);
+	inputPosition = AdjustLodLandscapeVertexPositionMS(inputPosition, float4x4(World, float4(0, 0, 0, 1)), HighDetailRange);
 #endif
 	
 	precise float4 previousInputPosition = inputPosition;
@@ -1182,7 +1182,7 @@ PS_OUTPUT main(PS_INPUT input)
 	vertexColor = (saturate(viewNormalAngle) * (1 - baseColor.w)).xxx * ((directionalAmbientColor + lightsDiffuseColor) * (input.Color.xyz * layerColor) - vertexColor) + vertexColor;
 #endif
 	
-    float2 screenMotionVector = GetSSMotionVector(input.WorldPosition, input.PreviousWorldPosition);
+    float2 screenMotionVector = GetMotionVectorCS(input.WorldPosition, input.PreviousWorldPosition);
 	
 #if defined (SPECULAR)
 	specularColor = (specularColor * glossiness * MaterialData.yyy) * SpecularColor.xyz;

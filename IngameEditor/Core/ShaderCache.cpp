@@ -912,7 +912,7 @@ namespace SIE
 				++defines;
 			}
 
-			if (descriptor && static_cast<uint32_t>(UtilityShaderFlags::LodLandscape))
+			if (descriptor & static_cast<uint32_t>(UtilityShaderFlags::LodLandscape))
 			{
 				if (descriptor &
 					(static_cast<uint32_t>(UtilityShaderFlags::RenderShadowmask) |
@@ -1912,7 +1912,8 @@ namespace SIE
 			       shader.shaderType == RE::BSShader::Type::Grass ||
 			       shader.shaderType == RE::BSShader::Type::Particle ||
 			       shader.shaderType == RE::BSShader::Type::Water ||
-			       shader.shaderType == RE::BSShader::Type::Effect;
+			       shader.shaderType == RE::BSShader::Type::Effect ||
+			       shader.shaderType == RE::BSShader::Type::Utility;
 		}
 
 		static uint32_t GetImagespaceShaderDescriptor(const RE::BSImagespaceShader& imagespaceShader)
