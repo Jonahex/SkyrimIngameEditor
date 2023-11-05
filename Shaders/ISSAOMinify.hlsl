@@ -27,13 +27,13 @@ float2 GetMinifiedTexCoord(float2 texCoord)
 	       texCoord;
 }
 
-static const float4 ContrastValues[] = { { 0.300000, 0, 0, 0 }, { 0.400000, 0, 0, 0 },
-	{ 0.500000, 0, 0, 0 }, { 0.400000, 0, 0, 0 }, { 0.300000, 0, 0, 0 }, { 0.400000, 0, 0, 0 },
-	{ 2.000000, 0, 0, 0 }, { 2.500000, 0, 0, 0 }, { 2.000000, 0, 0, 0 }, { 0.400000, 0, 0, 0 },
-	{ 0.500000, 0, 0, 0 }, { 2.500000, 0, 0, 0 }, { 3.500000, 0, 0, 0 }, { 2.500000, 0, 0, 0 },
-	{ 0.500000, 0, 0, 0 }, { 0.400000, 0, 0, 0 }, { 2.000000, 0, 0, 0 }, { 2.500000, 0, 0, 0 },
-	{ 2.000000, 0, 0, 0 }, { 0.400000, 0, 0, 0 }, { 0.300000, 0, 0, 0 }, { 0.400000, 0, 0, 0 },
-	{ 0.500000, 0, 0, 0 }, { 0.400000, 0, 0, 0 }, { 0.300000, 0, 0, 0 } };
+static const float ContrastValues[] = { 0.300000, 0.400000,
+	0.500000, 0.400000, 0.300000, 0.400000,
+	2.000000, 2.500000, 2.000000, 0.400000,
+	0.500000, 2.500000, 3.500000, 2.500000,
+	0.500000, 0.400000, 2.000000, 2.500000,
+	2.000000, 0.400000, 0.300000, 0.400000,
+	0.500000, 0.400000, 0.300000 };
 
 PS_OUTPUT main(PS_INPUT input)
 {
@@ -56,7 +56,7 @@ PS_OUTPUT main(PS_INPUT input)
 
 #if defined(CONTRAST)
 	int contrastIndex = (int)(5 * input.TexCoord.x) + (int)(5 * input.TexCoord.y) * 5;
-	float contrastFactor = ContrastValues[contrastIndex].x * g_ContrastParams.x;
+	float contrastFactor = ContrastValues[contrastIndex] * g_ContrastParams.x;
 	color *= contrastFactor;
 #endif
 

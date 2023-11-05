@@ -63,7 +63,7 @@ struct VS_OUTPUT
 #endif
 
 #if defined(DEBUG_SHADOWSPLIT)
-    float TexCoord1                                 : TEXCOORD2;
+    float Depth                                     : TEXCOORD2;
 #endif
 #endif
 };
@@ -72,7 +72,7 @@ struct VS_OUTPUT
 cbuffer PerTechnique								: register(b0)
 {
 	float4 HighDetailRange							: packoffset(c0);	// loaded cells center in xy, size in zw
-    float4 ParabolaParam                            : packoffset(c1);
+    float2 ParabolaParam                            : packoffset(c1);   // inverse radius in x, y is 1 for forward hemisphere or -1 for backward hemisphere
 };
 
 cbuffer PerMaterial									: register(b1)
@@ -153,10 +153,6 @@ VS_OUTPUT main(VS_INPUT input)
     vsout.PositionCS.xy = shadowDirection.xy / shadowDirection.z;
     vsout.PositionCS.z = ParabolaParam.x * length(positionCSPerspective);
     vsout.PositionCS.w = positionCS.w;
-    
-    vsout.TexCoord1.x = ParabolaParam.x * length(positionCSPerspective);
-    vsout.TexCoord1.y = positionCS.w;
-    vsout.TexCoord1.z = 0.5 * ParabolaParam.y * positionCS.z + 0.5;
 #else
     vsout.PositionCS = positionCS;
 #endif
@@ -218,7 +214,7 @@ VS_OUTPUT main(VS_INPUT input)
 #elif defined(ADDITIONAL_ALPHA_MASK)
     vsout.TexCoord1 = positionCS.zw;
 #elif defined(DEBUG_SHADOWSPLIT)
-    vsout.TexCoord1 = positionCS.z;
+    vsout.Depth = positionCS.z;
 #endif
 
 #if defined(RENDER_SHADOWMASK_ANY)
@@ -276,9 +272,9 @@ Texture2D<float4> TexGrayscaleSampler                   : register(t7);
 cbuffer PerTechnique                                    : register(b0)
 {
 	float4 VPOSOffset					                : packoffset(c0);
-	float4 ShadowSampleParam					        : packoffset(c1); // fPoissonRadiusScale / iShadowMapResolution in z and w
-	float4 EndSplitDistances					        : packoffset(c2);
-	float4 StartSplitDistances					        : packoffset(c3);
+	float4 ShadowSampleParam					        : packoffset(c1);   // fPoissonRadiusScale / iShadowMapResolution in z and w
+	float4 EndSplitDistances					        : packoffset(c2);   // cascade end distances int xyz, cascade count int z
+	float4 StartSplitDistances					        : packoffset(c3);   // cascade start ditances int xyz, 4 int z
 	float4 FocusShadowFadeParam					        : packoffset(c4);
 }
 
@@ -293,7 +289,7 @@ cbuffer PerGeometry                                     : register(b2)
 	float4 DebugColor					                : packoffset(c0);
 	float4 PropertyColor					            : packoffset(c1);
 	float4 AlphaTestRef					                : packoffset(c2);
-	float4 ShadowLightParam					            : packoffset(c3); // Falloff in x, ShadowDistance squared in z
+	float4 ShadowLightParam					            : packoffset(c3);   // Falloff in x, ShadowDistance squared in z
 	float4x3 FocusShadowMapProj[4]					    : packoffset(c4);
 #if defined (RENDER_SHADOWMASK)
 	float4x3 ShadowMapProj[4]					        : packoffset(c16);
@@ -1434,12 +1430,12 @@ PS_OUTPUT main(PS_INPUT input)
     float4 shadowColor = 1;
     
     uint stencilValue = 0;
-    float shadowThreshold = 0;
+    float shadowMapDepth = 0;
 #if defined(RENDER_DEPTH)
     float2 depthUv = input.PositionCS.xy * VPOSOffset.xy + VPOSOffset.zw;
     float depth = TexDepthSampler.Sample(SampDepthSampler, depthUv).x;
 
-    shadowThreshold = depth;
+    shadowMapDepth = depth;
     
 #if defined(FOCUS_SHADOW)
     uint3 stencilDimensions;
@@ -1455,73 +1451,68 @@ PS_OUTPUT main(PS_INPUT input)
 #else
     float4 positionMS = input.PositionMS.xyzw;
     
-    shadowThreshold = positionMS.w;
+    shadowMapDepth = positionMS.w;
 
     float fadeFactor = input.Alpha.x;
 #endif
     
 #if defined(RENDER_SHADOWMASK)
-    if (EndSplitDistances.z >= shadowThreshold)
+    if (EndSplitDistances.z >= shadowMapDepth)
     {
-        float4x3 shadowMapProj1 = ShadowMapProj[0];
-        float shadowMapAlpha = AlphaTestRef.y;
-        float shadowMapIndex1 = 0;
-        if (2.5 < EndSplitDistances.w && EndSplitDistances.y < shadowThreshold)
+        float4x3 lightProjectionMatrix = ShadowMapProj[0];
+        float shadowMapThreshold = AlphaTestRef.y;
+        float cascadeIndex = 0;
+        if (2.5 < EndSplitDistances.w && EndSplitDistances.y < shadowMapDepth)
         {
-            shadowMapProj1 = ShadowMapProj[2];
-            shadowMapAlpha = AlphaTestRef.z;
-            shadowMapIndex1 = 2;
-
+            lightProjectionMatrix = ShadowMapProj[2];
+            shadowMapThreshold = AlphaTestRef.z;
+            cascadeIndex = 2;
         }
-        else if (EndSplitDistances.x < shadowThreshold)
+        else if (EndSplitDistances.x < shadowMapDepth)
         {
-            shadowMapProj1 = ShadowMapProj[1];
-            shadowMapAlpha = AlphaTestRef.z;
-            shadowMapIndex1 = 1;
+            lightProjectionMatrix = ShadowMapProj[1];
+            shadowMapThreshold = AlphaTestRef.z;
+            cascadeIndex = 1;
         }
     
-        float shadowVisibility1 = 0;
-        float shadowVisibility2Offset = 0;
+        float shadowVisibility = 0;
         
-        float3 shadowMapUv1 = mul(transpose(shadowMapProj1), float4(positionMS.xyz, 1)).xyz;
+        float3 positionLS = mul(transpose(lightProjectionMatrix), float4(positionMS.xyz, 1)).xyz;
         
 #if SHADOWFILTER == 0
-        float shadowMap1 = TexShadowMapSampler.Sample(SampShadowMapSampler, float3(shadowMapUv1.xy, shadowMapIndex1)).x;
-        if (shadowMap1 >= shadowMapUv1.z - shadowMapAlpha)
+        float shadowMapValue = TexShadowMapSampler.Sample(SampShadowMapSampler, float3(positionLS.xy, cascadeIndex)).x;
+        if (shadowMapValue >= positionLS.z - shadowMapThreshold)
         {
-            shadowVisibility1 = 1;
-            shadowVisibility2Offset = -1;
+            shadowVisibility = 1;
         }
 #elif SHADOWFILTER == 1
-        shadowVisibility1 = TexShadowMapSamplerComp.SampleCmpLevelZero(SampShadowMapSamplerComp, float3(shadowMapUv1.xy, shadowMapIndex1), shadowMapUv1.z - shadowMapAlpha).x;
-        shadowVisibility2Offset = -shadowVisibility1;
+        shadowVisibility = TexShadowMapSamplerComp.SampleCmpLevelZero(SampShadowMapSamplerComp, float3(positionLS.xy, cascadeIndex), positionLS.z - shadowMapThreshold).x;
 #elif SHADOWFILTER == 3
-        shadowVisibility1 = GetPoissonDiskFilteredShadowVisibility(TexShadowMapSamplerComp, SampShadowMapSamplerComp, -1, shadowMapUv1.xy, shadowMapIndex1, shadowMapUv1.z - shadowMapAlpha, false);
-        shadowVisibility2Offset = -shadowVisibility1;
+        shadowVisibility = GetPoissonDiskFilteredShadowVisibility(TexShadowMapSamplerComp, SampShadowMapSamplerComp, -1, positionLS.xy, cascadeIndex, positionLS.z - shadowMapThreshold, false);
 #endif
         
-        if (shadowMapIndex1 < 1 && StartSplitDistances.y < shadowThreshold)
+        if (cascadeIndex < 1 && StartSplitDistances.y < shadowMapDepth)
         {
-            float shadowVisibility2 = 0;
+            float cascade1ShadowVisibility = 0;
             
-            float3 shadowMapUv2 = mul(transpose(ShadowMapProj[1]), float4(positionMS.xyz, 1)).xyz;
+            float3 cascade1PositionLS = mul(transpose(ShadowMapProj[1]), float4(positionMS.xyz, 1)).xyz;
             
 #if SHADOWFILTER == 0
-            float shadowMap2 = TexShadowMapSampler.Sample(SampShadowMapSampler, float3(shadowMapUv2.xy, 1)).x;
-            if (shadowMap2 >= shadowMapUv2.z - AlphaTestRef.z)
+            float cascade1ShadowMapValue = TexShadowMapSampler.Sample(SampShadowMapSampler, float3(cascade1PositionLS.xy, 1)).x;
+            if (cascade1ShadowMapValue >= cascade1PositionLS.z - AlphaTestRef.z)
             {
-                shadowVisibility2 = 1;
+                cascade1ShadowVisibility = 1;
             }
 #elif SHADOWFILTER == 1
-            shadowVisibility2 = TexShadowMapSamplerComp.SampleCmpLevelZero(SampShadowMapSamplerComp, float3(shadowMapUv2.xy, 1), shadowMapUv2.z - AlphaTestRef.z).x;
+            cascade1ShadowVisibility = TexShadowMapSamplerComp.SampleCmpLevelZero(SampShadowMapSamplerComp, float3(cascade1PositionLS.xy, 1), cascade1PositionLS.z - AlphaTestRef.z).x;
 #elif SHADOWFILTER == 3
-            shadowVisibility2 = GetPoissonDiskFilteredShadowVisibility(TexShadowMapSamplerComp, SampShadowMapSamplerComp, -1, shadowMapUv2.xy, 1, shadowMapUv2.z - AlphaTestRef.z, false);
+            cascade1ShadowVisibility = GetPoissonDiskFilteredShadowVisibility(TexShadowMapSamplerComp, SampShadowMapSamplerComp, -1, cascade1PositionLS.xy, 1, cascade1PositionLS.z - AlphaTestRef.z, false);
 #endif
             
-            float alphaFactor2Weight = smoothstep(0, 1, (shadowThreshold - StartSplitDistances.y) / (EndSplitDistances.x - StartSplitDistances.y));
-            shadowVisibility1 += alphaFactor2Weight * (shadowVisibility2 + shadowVisibility2Offset);
+            float cascade1BlendFactor = smoothstep(0, 1, (shadowMapDepth - StartSplitDistances.y) / (EndSplitDistances.x - StartSplitDistances.y));
+            shadowVisibility = lerp(shadowVisibility, cascade1ShadowVisibility, cascade1BlendFactor);
             
-            shadowMapAlpha = AlphaTestRef.z;
+            shadowMapThreshold = AlphaTestRef.z;
         }
         
         if (stencilValue != 0)
@@ -1529,17 +1520,17 @@ PS_OUTPUT main(PS_INPUT input)
             uint focusShadowIndex = stencilValue - 1;
             float3 focusShadowMapPosition = mul(transpose(FocusShadowMapProj[focusShadowIndex]), float4(positionMS.xyz, 1));
             float3 focusShadowMapUv = float3(focusShadowMapPosition.xy, StartSplitDistances.w + focusShadowIndex);
-            float focusShadowMapCompareValue = focusShadowMapPosition.z - 3 * shadowMapAlpha;
+            float focusShadowMapCompareValue = focusShadowMapPosition.z - 3 * shadowMapThreshold;
 #if SHADOWFILTER == 3
             float focusShadowVisibility = GetPoissonDiskFilteredShadowVisibility(TexFocusShadowMapSamplerComp, SampFocusShadowMapSamplerComp, -0.5, focusShadowMapUv.xy, focusShadowMapUv.z, focusShadowMapCompareValue, false).x;
 #else
             float focusShadowVisibility = TexFocusShadowMapSamplerComp.SampleCmpLevelZero(SampFocusShadowMapSamplerComp, focusShadowMapUv, focusShadowMapCompareValue).x;
 #endif
             float focusShadowFade = FocusShadowFadeParam[focusShadowIndex];
-            shadowVisibility1 = min(shadowVisibility1, lerp(1, focusShadowVisibility, focusShadowFade));
+            shadowVisibility = min(shadowVisibility, lerp(1, focusShadowVisibility, focusShadowFade));
         }
         
-        shadowColor.xyzw = fadeFactor * (shadowVisibility1 - 1) + float4(1, 1, 1, 1);
+        shadowColor.xyzw = fadeFactor * (shadowVisibility - 1) + 1;
     }
 #elif defined(RENDER_SHADOWMASKSPOT)
     float4 positionLS = mul(transpose(ShadowMapProj), float4(positionMS.xyz, 1));
@@ -1667,20 +1658,20 @@ PS_OUTPUT main(PS_INPUT input)
     
     float3 splitFactor = 0;
     
-    if (input.TexCoord1 < EndSplitDistances.x)
+    if (input.Depth < EndSplitDistances.x)
     {
         splitFactor.y += 1;
     }
-    if (input.TexCoord1 < EndSplitDistances.w && input.TexCoord1 > EndSplitDistances.z)
+    if (input.Depth < EndSplitDistances.w && input.Depth > EndSplitDistances.z)
     {
         splitFactor.y += 1;
         splitFactor.z += 1;
     }
-    if (input.TexCoord1 < EndSplitDistances.y && input.TexCoord1 > EndSplitDistances.x)
+    if (input.Depth < EndSplitDistances.y && input.Depth > EndSplitDistances.x)
     {
         splitFactor.z += 1;
     }
-    if (input.TexCoord1 < EndSplitDistances.z && input.TexCoord1 > EndSplitDistances.y)
+    if (input.Depth < EndSplitDistances.z && input.Depth > EndSplitDistances.y)
     {
         splitFactor.x += 1;
         splitFactor.y += 1;
