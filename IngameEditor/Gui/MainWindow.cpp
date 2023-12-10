@@ -1,5 +1,6 @@
 #include "Gui/MainWindow.h"
 
+#include "Core/Renderer.h"
 #include "Core/ShaderCache.h"
 #include "Gui/CellEditor.h"
 #include "Gui/Gui.h"
@@ -314,6 +315,13 @@ namespace SIE
 
 			if (PushingCollapsingHeader("Editor"))
 			{
+				auto& renderer = Renderer::Instance();
+				bool useCustomRenderer = renderer.IsEnabled();
+				if (ImGui::Checkbox("Use Custom Renderer", &useCustomRenderer))
+				{
+					renderer.SetEnabled(useCustomRenderer);
+				}
+
 				auto& shaderCache = ShaderCache::Instance();
 				bool isAsync = shaderCache.IsAsync();
 				if (ImGui::Checkbox("Async Shaders Loading", &isAsync))

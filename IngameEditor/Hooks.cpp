@@ -58,6 +58,12 @@
 #include <RE/N/NiSkinPartition.h>
 #include <RE/B/BSGeometry.h>
 #include <RE/B/BSFadeNode.h>
+#include <RE/B/BSLightingShaderMaterialParallax.h>
+#include <RE/R/Renderer.h>
+#include <RE/B/BSShadowLight.h>
+#include <RE/B/BSBatchRenderer.h>
+#include <RE/R/RendererState.h>
+#include <RE/B/BSShaderAccumulator.h>
 
 #include <magic_enum.hpp>
 
@@ -69,259 +75,973 @@
 #include <d3d11.h>
 #include <Windows.h>
 
-struct RendererShadowState
-{
-	uint32_t stateUpdateFlags;
-	uint8_t pad0[0x84];
-	uint32_t depthStencilDepthMode;
-	uint32_t depthStencilUnknown;
-	uint32_t depthStencilStencilMode;
-	uint32_t stencilRef;
-	uint32_t rasterStateFillMode;
-	uint32_t rasterStateCullMode;
-	uint32_t rasterStateDepthBiasMode;
-	uint32_t rasterStateScissorMode;
-	uint32_t alphaBlendMode;
-	uint32_t alphaBlendAlphaToCoverage;
-	uint32_t alphaBlendWriteMode;
-	bool alphaTestEnabled;
-	float alphaTestRef;
-};
+#include <D3d11_1.h>
+#include <wrl/client.h>
 
-struct BSLightingShader_SetupGeometry
+namespace FrameAnnotations
 {
-	static void thunk(RE::BSShader* shader, RE::BSRenderPass* pass, uint32_t renderFlags)
+	struct ScopedFrameEvent
 	{
-		static REL::Relocation<RendererShadowState*> RendererShadowStateInstance(
-			RE::Offset::RendererShadowStateInstance);
-		static REL::Relocation<ID3D11DepthStencilState**> DepthStencilStates(
-			RELOCATION_ID(524747, 411362));
-		static REL::Relocation<ID3D11Device**> Device(
-			RE::Offset::D3D11Device);
-
-		func(shader, pass, renderFlags);
-
-		if (auto fadeNode = pass->shaderProperty->fadeNode)
+		ScopedFrameEvent(const std::string& eventName)
 		{
-			const auto& targetManager = SIE::TargetManager::Instance();
-			if (fadeNode->userData != nullptr && fadeNode->userData == targetManager.GetTarget() &&
-				targetManager.GetEnableTargetHighlight())
+			HRESULT hr = RE::BSGraphics::Renderer::GetDeviceContext()->QueryInterface(
+				__uuidof(annotation),
+				reinterpret_cast<void**>(&annotation));
+			if (!FAILED(hr))
 			{
-				const bool isOutline = (((pass->passEnum - 1207959597) >> 24) & 0x3F) == 20;
-				auto& rss = *RendererShadowStateInstance;
-				LastDepthMode = rss.depthStencilDepthMode;
-				LastStencilMode = rss.depthStencilStencilMode;
-				LastStencilRef = rss.stencilRef;
-				LastRasterCullMode = rss.rasterStateCullMode;
-				LastAlphaBlendMode = rss.alphaBlendMode;
-				LastAlphaBlendWriteMode = rss.alphaBlendWriteMode;
-				LastAlphaTestEnabled = rss.alphaTestEnabled;
-				rss.stateUpdateFlags |= (0x1070 | 0xC | 0x80 | 0x100);
-				if (isOutline)
-				{
-					rss.depthStencilDepthMode = 0;
-					rss.depthStencilStencilMode = 0xB;
-					rss.stencilRef = 1;
-					rss.rasterStateCullMode = 0;
-					rss.alphaBlendMode = 0;
-					//rss.alphaBlendWriteMode = 0;
-					rss.alphaTestEnabled = false;
-				}
-				else if (pass->shaderProperty->flags.none(
-							 RE::BSShaderProperty::EShaderPropertyFlag::kDecal,
-							 RE::BSShaderProperty::EShaderPropertyFlag::kDynamicDecal))
-				{
-					logger::info("{} {} {} {} {}", pass->accumulationHint,
-						*reinterpret_cast<uint8_t*>(&pass->LODMode), fadeNode->currentFade, rss.depthStencilStencilMode, rss.stencilRef);
-					rss.depthStencilStencilMode = 2;
-					rss.stencilRef = 1;
-
-					auto& depthStencilTest =
-						DepthStencilStates
-							.get()[40 * rss.depthStencilDepthMode + rss.depthStencilStencilMode];
-					if (OutlinedObjectState == nullptr)
-					{
-						D3D11_DEPTH_STENCIL_DESC OutlinedObjectStateDesc;
-						depthStencilTest->GetDesc(&OutlinedObjectStateDesc);
-						OutlinedObjectStateDesc.BackFace.StencilDepthFailOp =
-							D3D11_STENCIL_OP_REPLACE;
-						OutlinedObjectStateDesc.FrontFace.StencilDepthFailOp =
-							D3D11_STENCIL_OP_REPLACE;
-						(*Device)->CreateDepthStencilState(&OutlinedObjectStateDesc,
-							&OutlinedObjectState);
-					}
-					OriginalState = depthStencilTest;
-					depthStencilTest = OutlinedObjectState;
-				}
+				annotation->BeginEvent(std::wstring(eventName.begin(), eventName.end()).c_str());
 			}
 		}
-	}
 
-	static inline uint32_t LastDepthMode = 6;
-	static inline uint32_t LastStencilMode = 0;
-	static inline uint32_t LastStencilRef = 255;
-	static inline ID3D11DepthStencilState* OriginalState = nullptr;
-	static inline ID3D11DepthStencilState* OutlinedObjectState = nullptr;
-	static inline uint32_t LastRasterCullMode = 1;
-	static inline uint32_t LastAlphaBlendMode = 0;
-	static inline uint32_t LastAlphaBlendWriteMode = 0;
-	static inline bool LastAlphaTestEnabled = false;
+		~ScopedFrameEvent()
+		{
+			if (annotation != nullptr)
+			{
+				annotation->EndEvent();
+			}
+		}
 
-	static inline REL::Relocation<decltype(thunk)> func;
-	static constexpr size_t idx = 0x06;
-};
+	private:
+		ID3DUserDefinedAnnotation* annotation = nullptr;
+	};
 
-struct BSLightingShader_RestoreGeometry
-{
-	static void thunk(RE::BSShader* shader, RE::BSRenderPass* pass, uint32_t renderFlags)
+	void BeginFrameEvent(const std::string& eventName)
 	{
-		static REL::Relocation<RendererShadowState*> RendererShadowStateInstance(
-			RE::Offset::RendererShadowStateInstance);
-		static REL::Relocation<ID3D11DepthStencilState**> DepthStencilStates(
-			RELOCATION_ID(524747, 411362));
-
-		func(shader, pass, renderFlags);
-
-		if (auto fadeNode = pass->shaderProperty->fadeNode)
+		ID3DUserDefinedAnnotation* annotation = nullptr;
+		HRESULT hr = RE::BSGraphics::Renderer::GetDeviceContext()->QueryInterface(
+			__uuidof(annotation),
+			reinterpret_cast<void**>(&annotation));
+		if (!FAILED(hr))
 		{
-			const auto& targetManager = SIE::TargetManager::Instance();
-			if (fadeNode->userData != nullptr && fadeNode->userData == targetManager.GetTarget() &&
-				targetManager.GetEnableTargetHighlight())
-			{
-				const bool isOutline = (((pass->passEnum - 1207959597) >> 24) & 0x3F) == 20;
-				auto& rss = *RendererShadowStateInstance;
-				rss.stateUpdateFlags |= (0x1070 | 0xC | 0x80 | 0x100);
-				if (!isOutline && pass->shaderProperty->flags.none(
-									  RE::BSShaderProperty::EShaderPropertyFlag::kDecal,
-									  RE::BSShaderProperty::EShaderPropertyFlag::kDynamicDecal))
-				{
-					DepthStencilStates
-						.get()[40 * rss.depthStencilDepthMode + rss.depthStencilStencilMode] =
-						BSLightingShader_SetupGeometry::OriginalState;
-				}
-				rss.depthStencilDepthMode = BSLightingShader_SetupGeometry::LastDepthMode;
-				rss.depthStencilStencilMode = BSLightingShader_SetupGeometry::LastStencilMode;
-				rss.stencilRef = BSLightingShader_SetupGeometry::LastStencilRef;
-				rss.rasterStateCullMode = BSLightingShader_SetupGeometry::LastRasterCullMode;
-				rss.alphaBlendMode = BSLightingShader_SetupGeometry::LastAlphaBlendMode;
-				rss.alphaBlendWriteMode = BSLightingShader_SetupGeometry::LastAlphaBlendWriteMode;
-				rss.alphaTestEnabled = BSLightingShader_SetupGeometry::LastAlphaTestEnabled;
-			}
+			annotation->BeginEvent(std::wstring(eventName.begin(), eventName.end()).c_str());
 		}
 	}
 
-	static inline REL::Relocation<decltype(thunk)> func;
-	static constexpr size_t idx = 0x07;
-};
-
-struct BSBatchRenderer_Draw
-{
-	static void thunk(RE::BSRenderPass* pass)
-	{ 
-		logger::info("{}", pass->passEnum);
-		func(pass);
-	}
-
-	static inline REL::Relocation<decltype(thunk)> func;
-};
-
-struct BSLightingShaderProperty_GetRenderPasses
-{
-	static RE::BSShaderProperty::RenderPassArray* thunk(RE::BSLightingShaderProperty* property,
-		RE::BSGeometry* geometry, uint32_t unk, RE::BSShaderAccumulator* accumulator)
+	void EndFrameEvent()
 	{
-		static REL::Relocation<RE::BSRenderPass*(RE::BSShaderProperty::RenderPassArray*,
-			RE::BSRenderPass*, RE::BSShader*, RE::BSShaderProperty*, RE::BSGeometry*, uint32_t)>
-			AddPass(RELOCATION_ID(98885, 105529));
-		static REL::Relocation<RE::BSShader**> LightingShaderPtr(RELOCATION_ID(528150, 415094));
-		static REL::Relocation<void(RE::BSShaderProperty::RenderPassArray*)> ClearRenderPassArray(
-			RELOCATION_ID(98881, 105525));
-		static REL::Relocation<void(RE::BSRenderPass*, uint8_t, RE::BSLight**)> SetRenderPassLights(
-			RELOCATION_ID(100711, 105525));
-
-		bool highlightEnabled = false;
-		if (auto fadeNode = property->fadeNode)
+		ID3DUserDefinedAnnotation* annotation = nullptr;
+		HRESULT hr = RE::BSGraphics::Renderer::GetDeviceContext()->QueryInterface(
+			__uuidof(annotation),
+			reinterpret_cast<void**>(&annotation));
+		if (!FAILED(hr))
 		{
-			const auto& targetManager = SIE::TargetManager::Instance();
-			if (fadeNode->userData != nullptr)
-			{
-				highlightEnabled = fadeNode->userData == targetManager.GetTarget() &&
-				                   targetManager.GetEnableTargetHighlight();
-				if (!highlightEnabled)
-				{
-					auto nextPass = property->renderPassList.head;
-					while (nextPass)
-					{
-						const bool isOutline =
-							(((nextPass->passEnum - 1207959597) >> 24) & 0x3F) == 20;
-						if (isOutline)
-						{
-							ClearRenderPassArray(&property->renderPassList);
-							property->lastRenderPassState = 0x7FFFFFFF;
-							break;
-						}
-						nextPass = nextPass->next;
-					}
-				}
-			}
+			annotation->EndEvent();
 		}
-
-		auto result = func(property, geometry, unk, accumulator);
-
-
-		if (highlightEnabled && geometry->flags.none(RE::NiAVObject::Flag::kHidden) &&
-			property->flags.none(RE::BSShaderProperty::EShaderPropertyFlag::kDecal,
-				RE::BSShaderProperty::EShaderPropertyFlag::kDynamicDecal) &&
-			property->renderPassList.head != nullptr)
-		{
-			RE::BSRenderPass* highlightPass = nullptr;
-			RE::BSRenderPass* mainPass = nullptr;
-			auto nextPass = property->renderPassList.head;
-			logger::info("Start:");
-			while (nextPass)
-			{
-				/*logger::info("{} {} {} {}",
-					magic_enum::enum_name(nextPass->shader->shaderType.get()),
-					*reinterpret_cast<uint8_t*>(&nextPass->LODMode), nextPass->accumulationHint,
-					nextPass->passEnum);*/
-				const bool isOutline = (((nextPass->passEnum - 1207959597) >> 24) & 0x3F) == 20;
-				if (isOutline)
-				{
-					highlightPass = nextPass;
-				}
-				else if (nextPass->shader == *LightingShaderPtr)
-				{
-					mainPass = nextPass;
-				}
-				nextPass = nextPass->next;
-			}
-			if (mainPass != nullptr)
-			{
-				uint32_t outlineFlags = 0;
-				if (property->flags.any(RE::BSShaderProperty::EShaderPropertyFlag::kSkinned))
-				{
-					outlineFlags |= 2;
-				}
-				if (property->flags.any(
-						RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
-				{
-					outlineFlags |= 4;
-				}
-				RE::BSRenderPass* pass =
-					AddPass(&property->renderPassList, highlightPass, *LightingShaderPtr, property,
-						geometry, ((20 << 24) + outlineFlags) + 1207959597);
-				SetRenderPassLights(pass, mainPass->numLights, mainPass->sceneLights);
-				pass->accumulationHint = mainPass->accumulationHint;
-				pass->LODMode = mainPass->LODMode;
-			}
-		}
-
-		return result;
 	}
 
-	static inline REL::Relocation<decltype(thunk)> func;
-	static constexpr size_t idx = 0x2A;
-};
+	template<RE::BSShader::Type ShaderType>
+	struct BSShader_SetupGeometry
+	{
+		static void thunk(RE::BSShader* shader, RE::BSRenderPass* pass, uint32_t renderFlags)
+		{
+			const std::string passName = std::format("[{}:{:x}] <{}> {}", magic_enum::enum_name(ShaderType), pass->passEnum,
+					pass->accumulationHint.underlying(), pass->geometry->name.c_str());
+			BeginFrameEvent(passName);
+
+			func(shader, pass, renderFlags);
+		}
+	
+		static inline REL::Relocation<decltype(thunk)> func;
+		static constexpr size_t idx = 0x06;
+	};
+
+	template<RE::BSShader::Type ShaderType>
+	struct BSShader_RestoreGeometry
+	{
+		static void thunk(RE::BSShader* shader, RE::BSRenderPass* pass, uint32_t renderFlags)
+		{
+			func(shader, pass, renderFlags);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+		static constexpr size_t idx = 0x07;
+	};
+
+	template <size_t RendererIndex>
+	struct AnnotatedRenderer
+	{
+		static inline void (*OriginalRenderer)(RE::BSShaderAccumulator*, uint32_t) = nullptr;
+
+		static void Init()
+		{
+			static REL::Relocation<void (**)(RE::BSShaderAccumulator*, uint32_t)> RendererArray(
+				RELOCATION_ID(527779, 414716));
+
+			if (RendererArray.get()[RendererIndex] != nullptr)
+			{
+				OriginalRenderer = RendererArray.get()[RendererIndex];
+				RendererArray.get()[RendererIndex] = &AnnotatedRenderer<RendererIndex>::Render;
+			}
+
+			if constexpr (RendererIndex > 0)
+			{
+				AnnotatedRenderer<RendererIndex - 1>::Init();
+			}
+		}
+
+		static void Render(RE::BSShaderAccumulator* shaderAccumulator, uint32_t renderFlags)
+		{
+			if (OriginalRenderer != nullptr)
+			{
+				BeginFrameEvent(std::format("Render Pass {} <{}>", RendererIndex, renderFlags));
+
+				OriginalRenderer(shaderAccumulator, renderFlags);
+
+				EndFrameEvent();
+			}
+		}
+	};
+	
+	struct BSBatchRenderer_Unk03
+	{
+		static void thunk(void* renderer, uint32_t firstPass, uint32_t lastPass, uint32_t renderFlags)
+		{
+			BeginFrameEvent(
+				std::format("BSBatchRenderer::Unk03 ({},{}) <{}>", firstPass, lastPass, renderFlags));
+
+			func(renderer, firstPass, lastPass, renderFlags);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+		static constexpr size_t idx = 0x03;
+	};
+
+	struct BSBatchRenderer_RenderBatches
+	{
+		static bool thunk(void* renderer, uint32_t* currentPass, uint32_t* bucketIndex,
+			void* passIndexList,
+			uint32_t renderFlags)
+		{
+			BeginFrameEvent(std::format("BSBatchRenderer::RenderBatches ({})[{}] <{}>", *currentPass, *bucketIndex,
+				renderFlags));
+
+			const bool result =
+				func(renderer, currentPass, bucketIndex, passIndexList, renderFlags);
+
+			EndFrameEvent();
+
+			return result;
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	struct BSShaderAccumulator_FinishAccumulatingDispatch
+	{
+		static void thunk(RE::BSShaderAccumulator* shaderAccumulator, uint32_t renderFlags)
+		{
+			BeginFrameEvent(std::format("BSShaderAccumulator::FinishAccumulatingDispatch [{}] <{}>",
+				static_cast<uint32_t>(shaderAccumulator->renderMode), renderFlags));
+
+			func(shaderAccumulator, renderFlags);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+		static constexpr size_t idx = 0x2A;
+	};
+
+	struct BSShaderAccumulator_Unk2B
+	{
+		static void thunk(RE::BSShaderAccumulator* shaderAccumulator, uint32_t renderFlags)
+		{
+			BeginFrameEvent(std::format("BSShaderAccumulator::Unk2B [{}] <{}>",
+				static_cast<uint32_t>(shaderAccumulator->renderMode), renderFlags));
+
+			func(shaderAccumulator, renderFlags);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+		static constexpr size_t idx = 0x2B;
+	};
+
+	struct BSCubeMapCamera_RenderCubemap
+	{
+		static void thunk(RE::NiAVObject* camera, int a2, bool a3, bool a4, bool a5)
+		{
+			BeginFrameEvent("Cubemap");
+
+			func(camera, a2, a3, a4, a5);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+		static constexpr size_t idx = 0x35;
+	};
+
+	template <RE::ImageSpaceManager::ImageSpaceEffectEnum EffectType>
+	struct BSImagespaceShader_Render
+	{
+		static void thunk(void* imageSpaceShader, RE::BSTriShape* shape, RE::ImageSpaceEffectParam* param)
+		{
+			BeginFrameEvent(std::format("{}", magic_enum::enum_name(EffectType)));
+
+			func(imageSpaceShader, shape, param);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+		static constexpr size_t idx = 0x01;
+	};
+
+	struct TESWaterSystem_Update
+	{
+		static bool thunk(void* waterReflections)
+		{
+			BeginFrameEvent("Water Reflections");
+
+			const bool result = func(waterReflections);
+
+			EndFrameEvent();
+
+			return result;
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	struct BSShadowDirectionalLight_RenderShadowmaps
+	{
+		static void thunk(RE::BSShadowLight* light, void* a2)
+		{
+			BeginFrameEvent("Directional Light Shadowmaps");
+
+			func(light, a2);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+		static constexpr size_t idx = 0x0A;
+	};
+
+	struct BSShadowFrustumLight_RenderShadowmaps
+	{
+		static void thunk(RE::BSShadowLight* light, void* a2)
+		{
+			BeginFrameEvent("Spot Light Shadowmaps");
+
+			func(light, a2);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+		static constexpr size_t idx = 0x0A;
+	};
+
+	struct BSShadowParabolicLight_RenderShadowmaps
+	{
+		static void thunk(RE::BSShadowLight* light, void* a2)
+		{
+			BeginFrameEvent("Omnidirectional Light Shadowmaps");
+
+			func(light, a2);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+		static constexpr size_t idx = 0x0A;
+	};
+
+	struct Main_RenderDepth
+	{
+		static void thunk(bool a1, bool a2)
+		{
+			BeginFrameEvent("Depth");
+
+			func(a1, a2);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	struct Main_RenderShadowmasks
+	{
+		static void thunk(bool a1)
+		{
+			BeginFrameEvent("Shadowmasks");
+
+			func(a1);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	struct Main_RenderWorld
+	{
+		static void thunk(bool a1)
+		{
+			BeginFrameEvent("World");
+
+			func(a1);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	struct Main_RenderFirstPersonView
+	{
+		static void thunk(bool a1, bool a2)
+		{
+			BeginFrameEvent("First Person View");
+
+			func(a1, a2);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	struct Main_RenderWaterEffects
+	{
+		static void thunk()
+		{
+			BeginFrameEvent("Water Effects");
+
+			func();
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	struct Main_RenderPlayerView
+	{
+		static void thunk(void* a1, bool a2, bool a3)
+		{
+			BeginFrameEvent("Player View");
+
+			func(a1, a2, a3);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	enum class RenderBatchesPass
+	{
+		Objects,
+		Grass,
+		Sky,
+		Particles,
+		Water,
+		SunGlare
+	};
+
+	template<RenderBatchesPass Pass>
+	struct RenderBatches_Objects
+	{
+		static void thunk(void* shaderAccumulator, uint32_t firstPass, uint32_t lastPass, uint32_t renderFlags, int groupIndex)
+		{
+			BeginFrameEvent(magic_enum::enum_name(Pass).data());
+
+			func(shaderAccumulator, firstPass, lastPass, renderFlags, groupIndex);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	template <uint32_t GroupIndex>
+	struct RenderPersistentPassList
+	{
+		static void thunk(void* group, uint32_t renderFlags)
+		{
+			BeginFrameEvent(std::format("Geometry Group {}", GroupIndex));
+
+			func(group, renderFlags);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	template <uint32_t GroupIndex>
+	struct RenderBatches_GeometryGroup
+	{
+		static void thunk(void* shaderAccumulator, uint32_t firstPass, uint32_t lastPass,
+			uint32_t renderFlags, int groupIndex)
+		{
+			BeginFrameEvent(std::format("Geometry Group {}", GroupIndex));
+
+			func(shaderAccumulator, firstPass, lastPass, renderFlags, groupIndex);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	template <bool BeforeWater>
+	struct RenderEffects
+	{
+		static void thunk(void* shaderAccumulator, uint32_t renderFlags)
+		{
+			BeginFrameEvent("Effects");
+
+			func(shaderAccumulator, renderFlags);
+
+			EndFrameEvent();
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+	};
+
+	void InstallThunks()
+	{
+		stl::write_vfunc<BSShader_SetupGeometry<RE::BSShader::Type::Lighting>>(
+			RE::VTABLE_BSLightingShader[0]);
+		stl::write_vfunc<BSShader_SetupGeometry<RE::BSShader::Type::Effect>>(
+			RE::VTABLE_BSEffectShader[0]);
+		stl::write_vfunc<BSShader_SetupGeometry<RE::BSShader::Type::Water>>(
+			RE::VTABLE_BSWaterShader[0]);
+		stl::write_vfunc<BSShader_SetupGeometry<RE::BSShader::Type::Utility>>(
+			RE::VTABLE_BSUtilityShader[0]);
+		stl::write_vfunc<BSShader_SetupGeometry<RE::BSShader::Type::Particle>>(
+			RE::VTABLE_BSParticleShader[0]);
+		stl::write_vfunc<BSShader_SetupGeometry<RE::BSShader::Type::Grass>>(
+			RE::VTABLE_BSGrassShader[0]);
+		stl::write_vfunc<BSShader_SetupGeometry<RE::BSShader::Type::DistantTree>>(
+			RE::VTABLE_BSDistantTreeShader[0]);
+		stl::write_vfunc<BSShader_SetupGeometry<RE::BSShader::Type::BloodSplatter>>(
+			RE::VTABLE_BSBloodSplatterShader[0]);
+		stl::write_vfunc<BSShader_SetupGeometry<RE::BSShader::Type::Sky>>(
+			RE::VTABLE_BSSkyShader[0]);
+
+		stl::write_vfunc<BSShader_RestoreGeometry<RE::BSShader::Type::Lighting>>(
+			RE::VTABLE_BSLightingShader[0]);
+		stl::write_vfunc<BSShader_RestoreGeometry<RE::BSShader::Type::Effect>>(
+			RE::VTABLE_BSEffectShader[0]);
+		stl::write_vfunc<BSShader_RestoreGeometry<RE::BSShader::Type::Water>>(
+			RE::VTABLE_BSWaterShader[0]);
+		stl::write_vfunc<BSShader_RestoreGeometry<RE::BSShader::Type::Utility>>(
+			RE::VTABLE_BSUtilityShader[0]);
+		stl::write_vfunc<BSShader_RestoreGeometry<RE::BSShader::Type::Particle>>(
+			RE::VTABLE_BSParticleShader[0]);
+		stl::write_vfunc<BSShader_RestoreGeometry<RE::BSShader::Type::Grass>>(
+			RE::VTABLE_BSGrassShader[0]);
+		stl::write_vfunc<BSShader_RestoreGeometry<RE::BSShader::Type::DistantTree>>(
+			RE::VTABLE_BSDistantTreeShader[0]);
+		stl::write_vfunc<BSShader_RestoreGeometry<RE::BSShader::Type::BloodSplatter>>(
+			RE::VTABLE_BSBloodSplatterShader[0]);
+		stl::write_vfunc<BSShader_RestoreGeometry<RE::BSShader::Type::Sky>>(
+			RE::VTABLE_BSSkyShader[0]);
+
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISFXAA>>(
+			RE::VTABLE_BSImagespaceShaderFXAA[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISCopy>>(
+			RE::VTABLE_BSImagespaceShaderCopy[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISCopyDynamicFetchDisabled>>(
+			RE::VTABLE_BSImagespaceShaderCopyDynamicFetchDisabled[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISCopyScaleBias>>(
+			RE::VTABLE_BSImagespaceShaderCopyScaleBias[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISCopyCustomViewport>>(
+			RE::VTABLE_BSImagespaceShaderCopyCustomViewport[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISCopyGrayScale>>(
+			RE::VTABLE_BSImagespaceShaderGreyScale[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISRefraction>>(
+			RE::VTABLE_BSImagespaceShaderRefraction[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISDoubleVision>>(
+			RE::VTABLE_BSImagespaceShaderDoubleVision[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISCopyTextureMask>>(
+			RE::VTABLE_BSImagespaceShaderTextureMask[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISMap>>(
+			RE::VTABLE_BSImagespaceShaderMap[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISWorldMap>>(
+			RE::VTABLE_BSImagespaceShaderWorldMap[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISWorldMapNoSkyBlur>>(
+			RE::VTABLE_BSImagespaceShaderWorldMapNoSkyBlur[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISDepthOfField>>(
+			RE::VTABLE_BSImagespaceShaderDepthOfField[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISDepthOfFieldFogged>>(
+			RE::VTABLE_BSImagespaceShaderDepthOfFieldFogged[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISDepthOfFieldMaskedFogged>>(
+			RE::VTABLE_BSImagespaceShaderDepthOfFieldMaskedFogged[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISDistantBlur>>(
+			RE::VTABLE_BSImagespaceShaderDistantBlur[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISDistantBlurFogged>>(
+			RE::VTABLE_BSImagespaceShaderDistantBlurFogged[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISDistantBlurMaskedFogged>>(
+			RE::VTABLE_BSImagespaceShaderDistantBlurMaskedFogged[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISRadialBlur>>(
+			RE::VTABLE_BSImagespaceShaderRadialBlur[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISRadialBlurMedium>>(
+			RE::VTABLE_BSImagespaceShaderRadialBlurMedium[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISRadialBlurHigh>>(
+			RE::VTABLE_BSImagespaceShaderRadialBlurHigh[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISHDRTonemapBlendCinematic>>(
+			RE::VTABLE_BSImagespaceShaderHDRTonemapBlendCinematic[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISHDRTonemapBlendCinematicFade>>(
+			RE::VTABLE_BSImagespaceShaderHDRTonemapBlendCinematicFade[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISHDRDownSample16>>(
+			RE::VTABLE_BSImagespaceShaderHDRDownSample16[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISHDRDownSample4>>(
+			RE::VTABLE_BSImagespaceShaderHDRDownSample4[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISHDRDownSample16Lum>>(
+			RE::VTABLE_BSImagespaceShaderHDRDownSample16Lum[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISHDRDownSample4RGB2Lum>>(
+			RE::VTABLE_BSImagespaceShaderHDRDownSample4RGB2Lum[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISHDRDownSample4LumClamp>>(
+			RE::VTABLE_BSImagespaceShaderHDRDownSample4LumClamp[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISHDRDownSample4LightAdapt>>(
+			RE::VTABLE_BSImagespaceShaderHDRDownSample4LightAdapt[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISHDRDownSample16LumClamp>>(
+			RE::VTABLE_BSImagespaceShaderHDRDownSample16LumClamp[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISHDRDownSample16LightAdapt>>(
+			RE::VTABLE_BSImagespaceShaderHDRDownSample16LightAdapt[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBlur3>>(
+			RE::VTABLE_BSImagespaceShaderBlur3[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBlur5>>(
+			RE::VTABLE_BSImagespaceShaderBlur5[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBlur7>>(
+			RE::VTABLE_BSImagespaceShaderBlur7[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBlur9>>(
+			RE::VTABLE_BSImagespaceShaderBlur9[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBlur11>>(
+			RE::VTABLE_BSImagespaceShaderBlur11[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBlur13>>(
+			RE::VTABLE_BSImagespaceShaderBlur13[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBlur15>>(
+			RE::VTABLE_BSImagespaceShaderBlur15[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISNonHDRBlur3>>(
+			RE::VTABLE_BSImagespaceShaderNonHDRBlur3[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISNonHDRBlur5>>(
+			RE::VTABLE_BSImagespaceShaderNonHDRBlur5[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISNonHDRBlur7>>(
+			RE::VTABLE_BSImagespaceShaderNonHDRBlur7[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISNonHDRBlur9>>(
+			RE::VTABLE_BSImagespaceShaderNonHDRBlur9[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISNonHDRBlur11>>(
+			RE::VTABLE_BSImagespaceShaderNonHDRBlur11[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISNonHDRBlur13>>(
+			RE::VTABLE_BSImagespaceShaderNonHDRBlur13[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISNonHDRBlur15>>(
+			RE::VTABLE_BSImagespaceShaderNonHDRBlur15[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBrightPassBlur3>>(
+			RE::VTABLE_BSImagespaceShaderBrightPassBlur3[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBrightPassBlur5>>(
+			RE::VTABLE_BSImagespaceShaderBrightPassBlur5[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBrightPassBlur7>>(
+			RE::VTABLE_BSImagespaceShaderBrightPassBlur7[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBrightPassBlur9>>(
+			RE::VTABLE_BSImagespaceShaderBrightPassBlur9[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBrightPassBlur11>>(
+			RE::VTABLE_BSImagespaceShaderBrightPassBlur11[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBrightPassBlur13>>(
+			RE::VTABLE_BSImagespaceShaderBrightPassBlur13[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBrightPassBlur15>>(
+			RE::VTABLE_BSImagespaceShaderBrightPassBlur15[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISWaterDisplacementClearSimulation>>(
+			RE::VTABLE_BSImagespaceShaderWaterDisplacementClearSimulation[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISWaterDisplacementTexOffset>>(
+			RE::VTABLE_BSImagespaceShaderWaterDisplacementTexOffset[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISWaterDisplacementWadingRipple>>(
+			RE::VTABLE_BSImagespaceShaderWaterDisplacementWadingRipple[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISWaterDisplacementRainRipple>>(
+			RE::VTABLE_BSImagespaceShaderWaterDisplacementRainRipple[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISWaterWadingHeightmap>>(
+			RE::VTABLE_BSImagespaceShaderWaterWadingHeightmap[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISWaterRainHeightmap>>(
+			RE::VTABLE_BSImagespaceShaderWaterRainHeightmap[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISWaterBlendHeightmaps>>(
+			RE::VTABLE_BSImagespaceShaderWaterBlendHeightmaps[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISWaterSmoothHeightmap>>(
+			RE::VTABLE_BSImagespaceShaderWaterSmoothHeightmap[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISWaterDisplacementNormals>>(
+			RE::VTABLE_BSImagespaceShaderWaterDisplacementNormals[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISNoiseScrollAndBlend>>(
+			RE::VTABLE_BSImagespaceShaderNoiseScrollAndBlend[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISNoiseNormalmap>>(
+			RE::VTABLE_BSImagespaceShaderNoiseNormalmap[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISVolumetricLighting>>(
+			RE::VTABLE_BSImagespaceShaderVolumetricLighting[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISLocalMap>>(
+			RE::VTABLE_BSImagespaceShaderLocalMap[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISAlphaBlend>>(
+			RE::VTABLE_BSImagespaceShaderAlphaBlend[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISLensFlare>>(
+			RE::VTABLE_BSImagespaceShaderLensFlare[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISLensFlareVisibility>>(
+			RE::VTABLE_BSImagespaceShaderLensFlareVisibility[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISApplyReflections>>(
+			RE::VTABLE_BSImagespaceShaderApplyReflections[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISApplyVolumetricLighting>>(
+			RE::VTABLE_BSImagespaceShaderISApplyVolumetricLighting[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBasicCopy>>(
+			RE::VTABLE_BSImagespaceShaderISBasicCopy[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISBlur>>(
+			RE::VTABLE_BSImagespaceShaderISBlur[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISVolumetricLightingBlurHCS>>(
+			RE::VTABLE_BSImagespaceShaderISVolumetricLightingBlurHCS[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISVolumetricLightingBlurVCS>>(
+			RE::VTABLE_BSImagespaceShaderISVolumetricLightingBlurVCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISReflectionBlurHCS>>(
+			RE::VTABLE_BSImagespaceShaderReflectionBlurHCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISReflectionBlurVCS>>(
+			RE::VTABLE_BSImagespaceShaderReflectionBlurVCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISParallaxMaskBlurHCS>>(
+			RE::VTABLE_BSImagespaceShaderISParallaxMaskBlurHCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISParallaxMaskBlurVCS>>(
+			RE::VTABLE_BSImagespaceShaderISParallaxMaskBlurVCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISDepthOfFieldBlurHCS>>(
+			RE::VTABLE_BSImagespaceShaderISDepthOfFieldBlurHCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISDepthOfFieldBlurVCS>>(
+			RE::VTABLE_BSImagespaceShaderISDepthOfFieldBlurVCS[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISCompositeVolumetricLighting>>(
+			RE::VTABLE_BSImagespaceShaderISCompositeVolumetricLighting[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISCompositeLensFlare>>(
+			RE::VTABLE_BSImagespaceShaderISCompositeLensFlare[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<
+			RE::ImageSpaceManager::ISCompositeLensFlareVolumetricLighting>>(
+			RE::VTABLE_BSImagespaceShaderISCompositeLensFlareVolumetricLighting[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISCopySubRegionCS>>(
+			RE::VTABLE_BSImagespaceShaderISCopySubRegionCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISDebugSnow>>(
+			RE::VTABLE_BSImagespaceShaderISDebugSnow[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISDownsample>>(
+			RE::VTABLE_BSImagespaceShaderISDownsample[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISDownsampleIgnoreBrightest>>(
+			RE::VTABLE_BSImagespaceShaderISDownsampleIgnoreBrightest[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISDownsampleCS>>(
+			RE::VTABLE_BSImagespaceShaderISDownsampleCS[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISDownsampleIgnoreBrightestCS>>(
+			RE::VTABLE_BSImagespaceShaderISDownsampleIgnoreBrightestCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISExp>>(
+			RE::VTABLE_BSImagespaceShaderISExp[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISIBLensFlares>>(
+			RE::VTABLE_BSImagespaceShaderISIBLensFlares[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISLightingComposite>>(
+			RE::VTABLE_BSImagespaceShaderISLightingComposite[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<
+			RE::ImageSpaceManager::ISLightingCompositeNoDirectionalLight>>(
+			RE::VTABLE_BSImagespaceShaderISLightingCompositeNoDirectionalLight[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISLightingCompositeMenu>>(
+			RE::VTABLE_BSImagespaceShaderISLightingCompositeMenu[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISPerlinNoiseCS>>(
+			RE::VTABLE_BSImagespaceShaderISPerlinNoiseCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISPerlinNoise2DCS>>(
+			RE::VTABLE_BSImagespaceShaderISPerlinNoise2DCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISReflectionsRayTracing>>(
+			RE::VTABLE_BSImagespaceShaderReflectionsRayTracing[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISReflectionsDebugSpecMask>>(
+			RE::VTABLE_BSImagespaceShaderReflectionsDebugSpecMask[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSAOBlurH>>(
+			RE::VTABLE_BSImagespaceShaderISSAOBlurH[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSAOBlurV>>(
+			RE::VTABLE_BSImagespaceShaderISSAOBlurV[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSAOBlurHCS>>(
+			RE::VTABLE_BSImagespaceShaderISSAOBlurHCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSAOBlurVCS>>(
+			RE::VTABLE_BSImagespaceShaderISSAOBlurVCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSAOCameraZ>>(
+			RE::VTABLE_BSImagespaceShaderISSAOCameraZ[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSAOCameraZAndMipsCS>>(
+			RE::VTABLE_BSImagespaceShaderISSAOCameraZAndMipsCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSAOCompositeSAO>>(
+			RE::VTABLE_BSImagespaceShaderISSAOCompositeSAO[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSAOCompositeFog>>(
+			RE::VTABLE_BSImagespaceShaderISSAOCompositeFog[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSAOCompositeSAOFog>>(
+			RE::VTABLE_BSImagespaceShaderISSAOCompositeSAOFog[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISMinify>>(
+			RE::VTABLE_BSImagespaceShaderISMinify[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISMinifyContrast>>(
+			RE::VTABLE_BSImagespaceShaderISMinifyContrast[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSAORawAO>>(
+			RE::VTABLE_BSImagespaceShaderISSAORawAO[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSAORawAONoTemporal>>(
+			RE::VTABLE_BSImagespaceShaderISSAORawAONoTemporal[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSAORawAOCS>>(
+			RE::VTABLE_BSImagespaceShaderISSAORawAOCS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSILComposite>>(
+			RE::VTABLE_BSImagespaceShaderISSILComposite[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSILRawInd>>(
+			RE::VTABLE_BSImagespaceShaderISSILRawInd[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSimpleColor>>(
+			RE::VTABLE_BSImagespaceShaderISSimpleColor[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISDisplayDepth>>(
+			RE::VTABLE_BSImagespaceShaderISDisplayDepth[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISSnowSSS>>(
+			RE::VTABLE_BSImagespaceShaderISSnowSSS[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISTemporalAA>>(
+			RE::VTABLE_BSImagespaceShaderISTemporalAA[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISTemporalAA_UI>>(
+			RE::VTABLE_BSImagespaceShaderISTemporalAA_UI[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISTemporalAA_Water>>(
+			RE::VTABLE_BSImagespaceShaderISTemporalAA_Water[3]);
+		stl::write_vfunc<
+			BSImagespaceShader_Render<RE::ImageSpaceManager::ISUpsampleDynamicResolution>>(
+			RE::VTABLE_BSImagespaceShaderISUpsampleDynamicResolution[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISWaterBlend>>(
+			RE::VTABLE_BSImagespaceShaderISWaterBlend[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISUnderwaterMask>>(
+			RE::VTABLE_BSImagespaceShaderISUnderwaterMask[3]);
+		stl::write_vfunc<BSImagespaceShader_Render<RE::ImageSpaceManager::ISWaterFlow>>(
+			RE::VTABLE_BSImagespaceShaderWaterFlow[3]);
+
+		stl::write_vfunc<BSShaderAccumulator_FinishAccumulatingDispatch>(
+			RE::VTABLE_BSShaderAccumulator[0]);
+		stl::write_vfunc<BSShaderAccumulator_Unk2B>(
+			RE::VTABLE_BSShaderAccumulator[0]);
+
+		stl::write_vfunc<BSCubeMapCamera_RenderCubemap>(RE::VTABLE_BSCubeMapCamera[0]);
+
+		stl::write_vfunc<BSBatchRenderer_Unk03>(RE::VTABLE_BSBatchRenderer[0]);
+
+		stl::write_vfunc<BSShadowDirectionalLight_RenderShadowmaps>(
+			RE::VTABLE_BSShadowDirectionalLight[0]);
+		stl::write_vfunc<BSShadowFrustumLight_RenderShadowmaps>(
+			RE::VTABLE_BSShadowFrustumLight[0]);
+		stl::write_vfunc<BSShadowParabolicLight_RenderShadowmaps>(
+			RE::VTABLE_BSShadowParabolicLight[0]);
+
+		{
+			const std::array targets{
+				REL::Relocation<std::uintptr_t>(RELOCATION_ID(99963, 106609), OFFSET(0x10A, 0xF9)),
+			};
+			for (const auto& target : targets)
+			{
+				stl::write_thunk_call<BSBatchRenderer_RenderBatches>(target.address());
+			}
+		}
+		{
+			const std::array targets{
+				REL::Relocation<std::uintptr_t>(RELOCATION_ID(31383, 32174), OFFSET(0x8A0, 0xC1C)),
+			};
+			for (const auto& target : targets)
+			{
+				stl::write_thunk_call<TESWaterSystem_Update>(target.address());
+			}
+		}
+		{
+			const auto RenderPlayerViewRelocationId = RELOCATION_ID(35560, 36559);
+			stl::write_thunk_call<Main_RenderWaterEffects>(
+				REL::Relocation<std::uintptr_t>(RenderPlayerViewRelocationId, 0x172).address());
+			stl::write_thunk_call<Main_RenderDepth>(
+				REL::Relocation<std::uintptr_t>(RenderPlayerViewRelocationId, 0x395).address());
+			stl::write_thunk_call<Main_RenderShadowmasks>(
+				REL::Relocation<std::uintptr_t>(RenderPlayerViewRelocationId, 0x39C).address());
+			stl::write_thunk_call<Main_RenderWorld>(
+				REL::Relocation<std::uintptr_t>(RenderPlayerViewRelocationId, OFFSET(0x831, 0x841))
+					.address());
+			stl::write_thunk_call<Main_RenderFirstPersonView>(
+				REL::Relocation<std::uintptr_t>(RenderPlayerViewRelocationId, OFFSET(0x944, 0x954))
+					.address());
+		}
+		{
+			const std::array targets{
+				REL::Relocation<std::uintptr_t>(RELOCATION_ID(35559, 36558), 0x11D),
+			};
+			for (const auto& target : targets)
+			{
+				stl::write_thunk_call<Main_RenderPlayerView>(target.address());
+			}
+		}
+		{
+			const auto PreResolveDepthRelocationId = RELOCATION_ID(99938, 106583);
+			stl::write_thunk_call<RenderBatches_Objects<RenderBatchesPass::Objects>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0x8E, 0x84))
+					.address());
+			stl::write_thunk_call<RenderPersistentPassList<9>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0xAE, 0xA4))
+					.address());
+			stl::write_thunk_call<RenderBatches_GeometryGroup<9>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0xCE, 0xC4))
+					.address());
+			stl::write_thunk_call<RenderBatches_Objects<RenderBatchesPass::Grass>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0xEA, 0xE0))
+					.address());
+			stl::write_thunk_call<RenderPersistentPassList<8>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0x10A, 0x100))
+					.address());
+			stl::write_thunk_call<RenderBatches_GeometryGroup<8>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0x12A, 0x120))
+					.address());
+			stl::write_thunk_call<RenderPersistentPassList<1>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0x147, 0x13D))
+					.address());
+			stl::write_thunk_call<RenderBatches_GeometryGroup<1>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0x167, 0x15D))
+					.address());
+			stl::write_thunk_call<RenderPersistentPassList<0>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0x1C6, 0x1B7))
+					.address());
+			stl::write_thunk_call<RenderBatches_GeometryGroup<0>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0x1E2, 0x1D3))
+					.address());
+			stl::write_thunk_call<RenderBatches_Objects<RenderBatchesPass::Sky>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0x247, 0x237))
+					.address());
+			stl::write_thunk_call<RenderPersistentPassList<13>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0x284, 0x274))
+					.address());
+			stl::write_thunk_call<RenderBatches_GeometryGroup<13>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0x3A4, 0x294))
+					.address());
+			stl::write_thunk_call<RenderBatches_Objects<RenderBatchesPass::Particles>>(
+				REL::Relocation<std::uintptr_t>(PreResolveDepthRelocationId, OFFSET(0x4A6, 0x492))
+					.address());
+
+			const auto PostResolveDepthRelocationId = RELOCATION_ID(99939, 106584);
+			stl::write_thunk_call<RenderEffects<true>>(
+				REL::Relocation<std::uintptr_t>(PostResolveDepthRelocationId, OFFSET(0x54, 0x51))
+					.address());
+			stl::write_thunk_call<RenderPersistentPassList<10>>(
+				REL::Relocation<std::uintptr_t>(PostResolveDepthRelocationId, OFFSET(0x126, 0x123))
+					.address());
+			stl::write_thunk_call<RenderBatches_GeometryGroup<10>>(
+				REL::Relocation<std::uintptr_t>(PostResolveDepthRelocationId, OFFSET(0x146, 0x143))
+					.address());
+			stl::write_thunk_call<RenderBatches_Objects<RenderBatchesPass::Water>>(
+				REL::Relocation<std::uintptr_t>(PostResolveDepthRelocationId, OFFSET(0x164, 0x161))
+					.address());
+			stl::write_thunk_call<RenderPersistentPassList<11>>(
+				REL::Relocation<std::uintptr_t>(PostResolveDepthRelocationId, OFFSET(0x279, 0x273))
+					.address());
+			stl::write_thunk_call<RenderBatches_GeometryGroup<11>>(
+				REL::Relocation<std::uintptr_t>(PostResolveDepthRelocationId, OFFSET(0x299, 0x293))
+					.address());
+			stl::write_thunk_call<RenderPersistentPassList<12>>(
+				REL::Relocation<std::uintptr_t>(PostResolveDepthRelocationId, OFFSET(0x2D6, 0x2D0))
+					.address());
+			stl::write_thunk_call<RenderBatches_GeometryGroup<12>>(
+				REL::Relocation<std::uintptr_t>(PostResolveDepthRelocationId, OFFSET(0x2F6, 0x2F0))
+					.address());
+			stl::write_thunk_call<RenderPersistentPassList<7>>(
+				REL::Relocation<std::uintptr_t>(PostResolveDepthRelocationId, OFFSET(0x394, 0x389))
+					.address());
+			stl::write_thunk_call<RenderBatches_GeometryGroup<7>>(
+				REL::Relocation<std::uintptr_t>(PostResolveDepthRelocationId, OFFSET(0x3B4, 0x3A9))
+					.address());
+			stl::write_thunk_call<RenderEffects<false>>(
+				REL::Relocation<std::uintptr_t>(PostResolveDepthRelocationId, OFFSET(0x551, 0x543))
+					.address());
+			stl::write_thunk_call<RenderBatches_Objects<RenderBatchesPass::SunGlare>>(
+				REL::Relocation<std::uintptr_t>(PostResolveDepthRelocationId, OFFSET(0x616, 0x605))
+					.address());
+
+			const auto RenderDecalsRelocationId = RELOCATION_ID(99941, 106586);
+			stl::write_thunk_call<RenderPersistentPassList<3>>(
+				REL::Relocation<std::uintptr_t>(RenderDecalsRelocationId, OFFSET(0x9D, 0x93))
+					.address());
+			stl::write_thunk_call<RenderBatches_GeometryGroup<3>>(
+				REL::Relocation<std::uintptr_t>(RenderDecalsRelocationId, OFFSET(0xBD, 0xB3))
+					.address());
+			stl::write_thunk_call<RenderPersistentPassList<2>>(
+				REL::Relocation<std::uintptr_t>(RenderDecalsRelocationId, OFFSET(0x119, 0x10F))
+					.address());
+			stl::write_thunk_call<RenderBatches_GeometryGroup<2>>(
+				REL::Relocation<std::uintptr_t>(RenderDecalsRelocationId, OFFSET(0x139, 0x12F))
+					.address());
+
+			
+			const auto Render4RelocationId = RELOCATION_ID(99942, 106587);
+			stl::write_thunk_call<RenderPersistentPassList<4>>(
+				REL::Relocation<std::uintptr_t>(Render4RelocationId, OFFSET(0xF4, 0xF5))
+					.address());
+			stl::write_thunk_call<RenderBatches_GeometryGroup<4>>(
+				REL::Relocation<std::uintptr_t>(Render4RelocationId, OFFSET(0x111, 0x112))
+					.address());
+		}
+
+		//AnnotatedRenderer<29>::Init();
+
+		auto renderer = RE::BSGraphics::Renderer::GetSingleton();
+
+		for (size_t renderTargetIndex = 0;
+			 renderTargetIndex < RE::RENDER_TARGETS::kTOTAL; ++renderTargetIndex)
+		{
+			const auto renderTargetName = magic_enum::enum_name(
+				static_cast<RE::RENDER_TARGETS::RENDER_TARGET>(renderTargetIndex));
+			if (auto texture = renderer->data.renderTargets[renderTargetIndex].texture)
+			{
+				texture->SetPrivateData(WKPDID_D3DDebugObjectName,
+					static_cast<UINT>(renderTargetName.size()), renderTargetName.data());
+			}
+		}
+
+		for (size_t renderTargetIndex = 0;
+			 renderTargetIndex < RE::RENDER_TARGETS_CUBEMAP::kTOTAL;
+			 ++renderTargetIndex)
+		{
+			const auto renderTargetName = magic_enum::enum_name(
+				static_cast<RE::RENDER_TARGETS_CUBEMAP::RENDER_TARGET_CUBEMAP>(renderTargetIndex));
+			if (auto texture = renderer->data.cubemapRenderTargets[renderTargetIndex].texture)
+			{
+				texture->SetPrivateData(WKPDID_D3DDebugObjectName,
+					static_cast<UINT>(renderTargetName.size()), renderTargetName.data());
+			}
+		}
+
+		/*for (size_t renderTargetIndex = 0; renderTargetIndex < RE::RENDER_TARGETS_3D::kTOTAL;
+			 ++renderTargetIndex)
+		{
+			const auto renderTargetName = magic_enum::enum_name(
+				static_cast<RE::RENDER_TARGETS_3D::RENDER_TARGET_3D>(renderTargetIndex));
+			renderer
+				->data.texture3DRenderTargets[renderTargetIndex]
+				.texture->SetPrivateData(WKPDID_D3DDebugObjectName,
+					static_cast<UINT>(renderTargetName.size()), renderTargetName.data());
+		}*/
+
+		for (size_t renderTargetIndex = 0;
+			 renderTargetIndex < RE::RENDER_TARGETS_DEPTHSTENCIL::kTOTAL;
+			 ++renderTargetIndex)
+		{
+			const auto renderTargetName = magic_enum::enum_name(
+				static_cast<RE::RENDER_TARGETS_DEPTHSTENCIL::RENDER_TARGET_DEPTHSTENCIL>(
+					renderTargetIndex));
+			if (auto texture = renderer->data.depthStencils[renderTargetIndex].texture)
+			{
+				texture->SetPrivateData(WKPDID_D3DDebugObjectName,
+					static_cast<UINT>(renderTargetName.size()), renderTargetName.data());
+			}
+		}
+	}
+}
 
 struct BSShader_BeginTechnique
 {
@@ -380,19 +1100,6 @@ struct BSShader_BeginTechnique
 				}
 			}
 		}
-		/*else
-		{
-			for (auto item : shader->pixelShaders)
-			{
-				if (item->id == pixelDescriptor)
-				{
-					pixelShader->constantBuffers[0] = item->constantBuffers[0];
-					pixelShader->constantBuffers[1] = item->constantBuffers[1];
-					pixelShader->constantBuffers[2] = item->constantBuffers[2];
-					break;
-				}
-			}
-		}*/
 		if (vertexShader == nullptr || pixelShader == nullptr)
 		{
 			return false;
@@ -1203,7 +1910,7 @@ struct MissingMeshCrashFix
 			{
 				if (auto fadeNode = model->AsFadeNode())
 				{
-					fadeNode->unk144 = 0;
+					fadeNode->currentDistance = 0;
 				}
 			}
 		}
@@ -1213,26 +1920,18 @@ struct MissingMeshCrashFix
 
 namespace Hooks
 {
-	void Install()
+	void OnPostLoad()
 	{
 		//BehaviorGraph::Install();
 	}
 
+	void OnDataLoaded() 
+	{ 
+		FrameAnnotations::InstallThunks();
+	}
+
 	void OnPostPostLoad()
 	{
-		/*{
-			const auto moduleBase = reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
-
-			const auto saveBinaryAddress =
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(76234, 78064), 0x3F)
-					.address();
-			SIE::PatchMemory(saveBinaryAddress, PBYTE("\xE9\x59\x00\x00\x00"), 5);
-
-			const auto registerStreamablesAddress =
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(76233, 78063), 0x21).address();
-			SIE::PatchMemory(registerStreamablesAddress, PBYTE("\xE9\x29\x00\x00\x00"), 5);
-		}*/
-
 		{
 			const std::array targets{
 				REL::Relocation<std::uintptr_t>(RELOCATION_ID(75964, 77790), 0xE8),
@@ -1245,21 +1944,6 @@ namespace Hooks
 		}
 		stl::write_vfunc<NiSkinInstance_RegisterStreamables>(RE::VTABLE_NiSkinInstance[0]);
 		stl::write_vfunc<NiSkinInstance_RegisterStreamables>(RE::VTABLE_BSDismemberSkinInstance[0]);
-
-		/*stl::write_vfunc<BSLightingShaderProperty_GetRenderPasses>(
-			RE::VTABLE_BSLightingShaderProperty[0]);
-		stl::write_vfunc<BSLightingShader_SetupGeometry>(RE::VTABLE_BSLightingShader[0]);
-		stl::write_vfunc<BSLightingShader_RestoreGeometry>(RE::VTABLE_BSLightingShader[0]);*/
-
-		/*{
-			const std::array targets{
-				REL::Relocation<std::uintptr_t>(RELOCATION_ID(100847, 107637), 0),
-			};
-			for (const auto& target : targets)
-			{
-				stl::write_thunk_jmp<BSBatchRenderer_Draw>(target.address());
-			}
-		}*/
 
 		{
 			const std::array targets{

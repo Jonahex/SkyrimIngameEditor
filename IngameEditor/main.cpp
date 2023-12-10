@@ -10,7 +10,7 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_message)
 	if (a_message->type == SKSE::MessagingInterface::kPostLoad) 
 	{
 		logger::info("{:*^30}", "HOOKS");
-		Hooks::Install();
+		Hooks::OnPostLoad();
 		SIE::Gui::Instance();
 	}
 	else if (a_message->type == SKSE::MessagingInterface::kPostPostLoad)
@@ -19,6 +19,7 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_message)
 	}
 	else if (a_message->type == SKSE::MessagingInterface::kDataLoaded)
 	{
+		Hooks::OnDataLoaded();
 		RE::BSInputDeviceManager::GetSingleton()->AddEventSink(&SIE::Gui::Instance());
 		SIE::RegisterNiConstructors();
 		SIE::RegisterNiEditors();

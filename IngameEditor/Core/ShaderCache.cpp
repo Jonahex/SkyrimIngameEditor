@@ -21,6 +21,9 @@ namespace SIE
 		constexpr const char* VertexShaderProfile = "vs_5_0";
 		constexpr const char* PixelShaderProfile = "ps_5_0";
 		constexpr const char* ComputeShaderProfile = "cs_5_0";
+		constexpr const char* GeometryShaderProfile = "hs_5_0";
+		constexpr const char* HullShaderProfile = "hs_5_0";
+		constexpr const char* DomainShaderProfile = "ds_5_0";
 
 		static std::wstring GetShaderPath(const std::string_view& name) 
 		{ 
@@ -37,6 +40,12 @@ namespace SIE
 				return PixelShaderProfile;
 			case ShaderClass::Compute:
 				return ComputeShaderProfile;
+			case ShaderClass::Geometry:
+				return GeometryShaderProfile;
+			case ShaderClass::Hull:
+				return HullShaderProfile;
+			case ShaderClass::Domain:
+				return DomainShaderProfile;
 			}
 		}
 
@@ -245,6 +254,14 @@ namespace SIE
 
 		enum class GrassShaderTechniques
 		{
+			VertLit = 0,
+			FlatLit = 1,
+			FlatLitSlope = 2,
+			VertLitSlope = 3,
+			VertLitBillboard = 4,
+			FlatLitBillboard = 5,
+			FlatLitSlopeBillboard = 6,
+			VertLitSlopeBillboard = 7,
 			RenderDepth = 8,
 		};
 
@@ -256,7 +273,52 @@ namespace SIE
 		static void GetGrassShaderDefines(uint32_t descriptor, D3D_SHADER_MACRO* defines)
 		{
 			const auto technique = descriptor & 0b1111;
-			if (technique == static_cast<uint32_t>(GrassShaderTechniques::RenderDepth))
+			if (technique == static_cast<uint32_t>(GrassShaderTechniques::VertLit))
+			{
+				defines[0] = { "VERTLIT", nullptr };
+				++defines;
+			}
+			else if (technique == static_cast<uint32_t>(GrassShaderTechniques::FlatLitSlope))
+			{
+				defines[0] = { "SLOPE", nullptr };
+				++defines;
+			}
+			else if (technique == static_cast<uint32_t>(GrassShaderTechniques::VertLitSlope))
+			{
+				defines[0] = { "VERTLIT", nullptr };
+				++defines;
+			}
+			else if (technique == static_cast<uint32_t>(GrassShaderTechniques::VertLitBillboard))
+			{
+				defines[0] = { "VERTLIT", nullptr };
+				++defines;
+				defines[0] = { "BILLBOARD", nullptr };
+				++defines;
+			}
+			else if (technique == static_cast<uint32_t>(GrassShaderTechniques::FlatLitBillboard))
+			{
+				defines[0] = { "BILLBOARD", nullptr };
+				++defines;
+			}
+			else if (technique ==
+					 static_cast<uint32_t>(GrassShaderTechniques::FlatLitSlopeBillboard))
+			{
+				defines[0] = { "SLOPE", nullptr };
+				++defines;
+				defines[0] = { "BILLBOARD", nullptr };
+				++defines;
+			}
+			else if (technique ==
+					 static_cast<uint32_t>(GrassShaderTechniques::VertLitSlopeBillboard))
+			{
+				defines[0] = { "VERTLIT", nullptr };
+				++defines;
+				defines[0] = { "SLOPE", nullptr };
+				++defines;
+				defines[0] = { "BILLBOARD", nullptr };
+				++defines;
+			}
+			else if (technique == static_cast<uint32_t>(GrassShaderTechniques::RenderDepth))
 			{
 				defines[0] = { "RENDER_DEPTH", nullptr };
 				++defines;
@@ -1664,9 +1726,9 @@ namespace SIE
 									std::format("{}[{}]", varDesc.Name, varTypeDesc.Elements);
 								const auto variableArrayIndex =
 									GetVariableIndex(shaderClass, shader, arrayName.c_str());
-								if (variableArrayIndex != 1)
+								if (variableArrayIndex != -1)
 								{
-									constantOffsets[variableIndex] = varDesc.StartOffset / 4;
+									constantOffsets[variableArrayIndex] = varDesc.StartOffset / 4;
 								}
 								else
 								{
@@ -1730,6 +1792,18 @@ namespace SIE
 			{
 				defines[0] = { "PSHADER", nullptr };
 			}
+			else if (shaderClass == ShaderClass::Geometry)
+			{
+				defines[0] = { "GSHADER", nullptr };
+			}
+			else if (shaderClass == ShaderClass::Hull)
+			{
+				defines[0] = { "HSHADER", nullptr };
+			}
+			else if (shaderClass == ShaderClass::Domain)
+			{
+				defines[0] = { "DSHADER", nullptr };
+			}
 			defines[1] = { nullptr, nullptr };
 			GetShaderDefines(type, descriptor, &defines[1]);
 
@@ -1766,7 +1840,6 @@ namespace SIE
 		std::unique_ptr<RE::BSGraphics::VertexShader> CreateVertexShader(ID3DBlob& shaderData,
 			const RE::BSShader& shader, uint32_t descriptor) 
 		{
-			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
 			static const auto perTechniqueBuffersArray =
 				REL::Relocation<ID3D11Buffer**>(RELOCATION_ID(524755, 411371));
 			static const auto perMaterialBuffersArray =
@@ -1836,7 +1909,6 @@ namespace SIE
 		std::unique_ptr<RE::BSGraphics::PixelShader> CreatePixelShader(ID3DBlob& shaderData,
 			const RE::BSShader& shader, uint32_t descriptor)
 		{
-			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
 			static const auto perTechniqueBuffersArray =
 				REL::Relocation<ID3D11Buffer**>(RELOCATION_ID(524761, 411377));
 			static const auto perMaterialBuffersArray =
@@ -1853,7 +1925,7 @@ namespace SIE
 				shaderData.GetBufferSize(), IID_PPV_ARGS(&reflector));
 			if (FAILED(reflectionResult))
 			{
-				logger::error("Failed to reflect vertex shader {}::{}", magic_enum::enum_name(shader.shaderType.get()),
+				logger::error("Failed to reflect pixel shader {}::{}", magic_enum::enum_name(shader.shaderType.get()),
 					descriptor);
 			}
 			else
@@ -1899,21 +1971,165 @@ namespace SIE
 			return newShader;
 		}
 
+		template<size_t Count>
+		std::array<Microsoft::WRL::ComPtr<ID3D11Buffer>, Count> CreateDynamicConstantBuffers(ID3D11Device& device)
+		{
+			std::array<Microsoft::WRL::ComPtr<ID3D11Buffer>, Count> result;
+
+			D3D11_BUFFER_DESC descriptor;
+			descriptor.Usage = D3D11_USAGE_DYNAMIC;
+			descriptor.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+			descriptor.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+			descriptor.MiscFlags = 0; 
+			descriptor.StructureByteStride = 0;
+			for (UINT bufferIndex = 0; bufferIndex < Count; ++bufferIndex)
+			{
+				descriptor.ByteWidth = 4 * sizeof(float) * (bufferIndex + 1);
+				ID3D11Buffer* buffer;
+				device.CreateBuffer(&descriptor, nullptr, &buffer);
+				result[bufferIndex] = buffer;
+			}
+
+			return result;
+		}
+
+		std::unique_ptr<HullShader> CreateHullShader(ID3DBlob& shaderData,
+			const RE::BSShader& shader, uint32_t descriptor)
+		{
+			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
+			static const auto perTechniqueBuffersArray =
+				CreateDynamicConstantBuffers<HullShader::MaxConstants>(**device);
+			static const auto perMaterialBuffersArray =
+				CreateDynamicConstantBuffers<HullShader::MaxConstants>(**device);
+			static const auto perGeometryBuffersArray =
+				CreateDynamicConstantBuffers<HullShader::MaxConstants>(**device);
+			static std::array<float, HullShader::MaxConstants * 4> bufferData;
+
+			auto newShader = std::make_unique<HullShader>();
+			newShader->id = descriptor;
+
+			Microsoft::WRL::ComPtr<ID3D11ShaderReflection> reflector;
+			const auto reflectionResult = D3DReflect(shaderData.GetBufferPointer(),
+				shaderData.GetBufferSize(), IID_PPV_ARGS(&reflector));
+			if (FAILED(reflectionResult))
+			{
+				logger::error("Failed to reflect hull shader {}::{}",
+					magic_enum::enum_name(shader.shaderType.get()), descriptor);
+			}
+			else
+			{
+				std::array<size_t, 3> bufferSizes = { 0, 0, 0 };
+				std::fill(newShader->constantTable.begin(), newShader->constantTable.end(), 0);
+				uint64_t dummy;
+				ReflectConstantBuffers(*reflector.Get(), bufferSizes, newShader->constantTable,
+					dummy, ShaderClass::Hull, descriptor, shader);
+				if (bufferSizes[0] != 0 && bufferSizes[0] < perTechniqueBuffersArray.size())
+				{
+					newShader->constantBuffers[0].buffer =
+						perTechniqueBuffersArray[bufferSizes[0]].Get();
+				}
+				else
+				{
+					newShader->constantBuffers[0].buffer = nullptr;
+					newShader->constantBuffers[0].data = bufferData.data();
+				}
+				if (bufferSizes[1] != 0 && bufferSizes[1] < perMaterialBuffersArray.size())
+				{
+					newShader->constantBuffers[1].buffer =
+						perMaterialBuffersArray[bufferSizes[1]].Get();
+				}
+				else
+				{
+					newShader->constantBuffers[1].buffer = nullptr;
+					newShader->constantBuffers[1].data = bufferData.data();
+				}
+				if (bufferSizes[2] != 0 && bufferSizes[2] < perGeometryBuffersArray.size())
+				{
+					newShader->constantBuffers[2].buffer =
+						perGeometryBuffersArray[bufferSizes[2]].Get();
+				}
+				else
+				{
+					newShader->constantBuffers[2].buffer = nullptr;
+					newShader->constantBuffers[2].data = bufferData.data();
+				}
+			}
+
+			return newShader;
+		}
+
+		std::unique_ptr<DomainShader> CreateDomainShader(ID3DBlob& shaderData,
+			const RE::BSShader& shader, uint32_t descriptor)
+		{
+			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
+			static const auto perTechniqueBuffersArray =
+				CreateDynamicConstantBuffers<DomainShader::MaxConstants>(**device);
+			static const auto perMaterialBuffersArray =
+				CreateDynamicConstantBuffers<DomainShader::MaxConstants>(**device);
+			static const auto perGeometryBuffersArray =
+				CreateDynamicConstantBuffers<DomainShader::MaxConstants>(**device);
+			static std::array<float, DomainShader::MaxConstants * 4> bufferData;
+
+			auto newShader = std::make_unique<DomainShader>();
+			newShader->id = descriptor;
+
+			Microsoft::WRL::ComPtr<ID3D11ShaderReflection> reflector;
+			const auto reflectionResult = D3DReflect(shaderData.GetBufferPointer(),
+				shaderData.GetBufferSize(), IID_PPV_ARGS(&reflector));
+			if (FAILED(reflectionResult))
+			{
+				logger::error("Failed to reflect domain shader {}::{}",
+					magic_enum::enum_name(shader.shaderType.get()), descriptor);
+			}
+			else
+			{
+				std::array<size_t, 3> bufferSizes = { 0, 0, 0 };
+				std::fill(newShader->constantTable.begin(), newShader->constantTable.end(), 0);
+				uint64_t dummy;
+				ReflectConstantBuffers(*reflector.Get(), bufferSizes, newShader->constantTable,
+					dummy, ShaderClass::Domain, descriptor, shader);
+				if (bufferSizes[0] != 0 && bufferSizes[0] < perTechniqueBuffersArray.size())
+				{
+					newShader->constantBuffers[0].buffer =
+						perTechniqueBuffersArray[bufferSizes[0]].Get();
+				}
+				else
+				{
+					newShader->constantBuffers[0].buffer = nullptr;
+					newShader->constantBuffers[0].data = bufferData.data();
+				}
+				if (bufferSizes[1] != 0 && bufferSizes[1] < perMaterialBuffersArray.size())
+				{
+					newShader->constantBuffers[1].buffer =
+						perMaterialBuffersArray[bufferSizes[1]].Get();
+				}
+				else
+				{
+					newShader->constantBuffers[1].buffer = nullptr;
+					newShader->constantBuffers[1].data = bufferData.data();
+				}
+				if (bufferSizes[2] != 0 && bufferSizes[2] < perGeometryBuffersArray.size())
+				{
+					newShader->constantBuffers[2].buffer =
+						perGeometryBuffersArray[bufferSizes[2]].Get();
+				}
+				else
+				{
+					newShader->constantBuffers[2].buffer = nullptr;
+					newShader->constantBuffers[2].data = bufferData.data();
+				}
+			}
+
+			return newShader;
+		}
+
 		static bool IsSupportedShader(const RE::BSShader& shader, uint32_t descriptor)
 		{
 			if (shader.shaderType == RE::BSShader::Type::ImageSpace)
 			{
 				return descriptor != std::numeric_limits<uint32_t>::max();
 			}
-			return shader.shaderType == RE::BSShader::Type::Lighting ||
-			       shader.shaderType == RE::BSShader::Type::BloodSplatter ||
-			       shader.shaderType == RE::BSShader::Type::DistantTree ||
-			       shader.shaderType == RE::BSShader::Type::Sky ||
-			       shader.shaderType == RE::BSShader::Type::Grass ||
-			       shader.shaderType == RE::BSShader::Type::Particle ||
-			       shader.shaderType == RE::BSShader::Type::Water ||
-			       shader.shaderType == RE::BSShader::Type::Effect ||
-			       shader.shaderType == RE::BSShader::Type::Utility;
+			return true;
 		}
 
 		static uint32_t GetImagespaceShaderDescriptor(const RE::BSImagespaceShader& imagespaceShader)
@@ -2123,6 +2339,80 @@ namespace SIE
 		return nullptr;
 	}
 
+	HullShader* ShaderCache::GetHullShader(const RE::BSShader& shader,
+		uint32_t rawDescriptor)
+	{
+		uint32_t descriptor = rawDescriptor;
+		if (shader.shaderType == RE::BSShader::Type::ImageSpace)
+		{
+			descriptor = SShaderCache::GetImagespaceShaderDescriptor(
+				static_cast<const RE::BSImagespaceShader&>(shader));
+		}
+
+		if (!SShaderCache::IsSupportedShader(shader, descriptor))
+		{
+			return nullptr;
+		}
+
+		{
+			std::lock_guard lockGuard(hullShadersMutex);
+			auto& typeCache = hullShaders[static_cast<size_t>(shader.shaderType.underlying())];
+			auto it = typeCache.find(descriptor);
+			if (it != typeCache.end())
+			{
+				return it->second.get();
+			}
+		}
+
+		if (IsAsync())
+		{
+			compilationSet.Add({ ShaderClass::Hull, shader, descriptor });
+		}
+		else
+		{
+			return MakeAndAddHullShader(shader, descriptor);
+		}
+
+		return nullptr;
+	}
+
+	DomainShader* ShaderCache::GetDomainShader(const RE::BSShader& shader,
+		uint32_t rawDescriptor)
+	{
+		uint32_t descriptor = rawDescriptor;
+		if (shader.shaderType == RE::BSShader::Type::ImageSpace)
+		{
+			descriptor = SShaderCache::GetImagespaceShaderDescriptor(
+				static_cast<const RE::BSImagespaceShader&>(shader));
+		}
+
+		if (!SShaderCache::IsSupportedShader(shader, descriptor))
+		{
+			return nullptr;
+		}
+
+		{
+			std::lock_guard lockGuard(domainShadersMutex);
+			auto& typeCache = domainShaders[static_cast<size_t>(shader.shaderType.underlying())];
+			auto it = typeCache.find(descriptor);
+			if (it != typeCache.end())
+			{
+				return it->second.get();
+			}
+		}
+
+		if (IsAsync())
+		{
+			compilationSet.Add({ ShaderClass::Domain, shader, descriptor });
+		}
+		else
+		{
+			return MakeAndAddDomainShader(shader, descriptor);
+		}
+
+		return nullptr;
+	}
+
 	ShaderCache::~ShaderCache() 
 	{ 
 		Clear();
@@ -2156,6 +2446,22 @@ namespace SIE
 			shaders.clear();
 		}
 		for (auto& shaders : pixelShaders)
+		{
+			for (auto& [id, shader] : shaders)
+			{
+				shader->shader->Release();
+			}
+			shaders.clear();
+		}
+		for (auto& shaders : hullShaders)
+		{
+			for (auto& [id, shader] : shaders)
+			{
+				shader->shader->Release();
+			}
+			shaders.clear();
+		}
+		for (auto& shaders : domainShaders)
 		{
 			for (auto& [id, shader] : shaders)
 			{
@@ -2264,6 +2570,70 @@ namespace SIE
 		return nullptr;
 	}
 
+	HullShader* ShaderCache::MakeAndAddHullShader(const RE::BSShader& shader,
+		uint32_t descriptor)
+	{
+		if (const auto shaderBlob =
+				SShaderCache::CompileShader(ShaderClass::Hull, shader, descriptor))
+		{
+			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
+
+			auto newShader = SShaderCache::CreateHullShader(*shaderBlob, shader, descriptor);
+
+			std::lock_guard lockGuard(hullShadersMutex);
+			const auto result = (*device)->CreateHullShader(shaderBlob->GetBufferPointer(),
+				shaderBlob->GetBufferSize(), nullptr, &newShader->shader);
+			if (FAILED(result))
+			{
+				logger::error("Failed to create hull shader {}::{}",
+					magic_enum::enum_name(shader.shaderType.get()), descriptor);
+				if (newShader->shader != nullptr)
+				{
+					newShader->shader->Release();
+				}
+			}
+			else
+			{
+				return hullShaders[static_cast<size_t>(shader.shaderType.get())]
+				    .insert_or_assign(descriptor, std::move(newShader))
+				    .first->second.get();
+			}
+		}
+		return nullptr;
+	}
+
+	DomainShader* ShaderCache::MakeAndAddDomainShader(const RE::BSShader& shader,
+		uint32_t descriptor)
+	{
+		if (const auto shaderBlob =
+				SShaderCache::CompileShader(ShaderClass::Domain, shader, descriptor))
+		{
+			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
+
+			auto newShader = SShaderCache::CreateDomainShader(*shaderBlob, shader, descriptor);
+
+			std::lock_guard lockGuard(domainShadersMutex);
+			const auto result = (*device)->CreateDomainShader(shaderBlob->GetBufferPointer(),
+				shaderBlob->GetBufferSize(), nullptr, &newShader->shader);
+			if (FAILED(result))
+			{
+				logger::error("Failed to create domain shader {}::{}",
+					magic_enum::enum_name(shader.shaderType.get()), descriptor);
+				if (newShader->shader != nullptr)
+				{
+					newShader->shader->Release();
+				}
+			}
+			else
+			{
+				return domainShaders[static_cast<size_t>(shader.shaderType.get())]
+				    .insert_or_assign(descriptor, std::move(newShader))
+				    .first->second.get();
+			}
+		}
+		return nullptr;
+	}
+
 	void ShaderCache::ProcessCompilationSet() 
 	{ 
 		while (true)
@@ -2291,6 +2661,14 @@ namespace SIE
 		else if (shaderClass == ShaderClass::Pixel)
 		{
 			ShaderCache::Instance().MakeAndAddPixelShader(shader, descriptor);
+		}
+		else if (shaderClass == ShaderClass::Hull)
+		{
+			ShaderCache::Instance().MakeAndAddHullShader(shader, descriptor);
+		}
+		else if (shaderClass == ShaderClass::Domain)
+		{
+			ShaderCache::Instance().MakeAndAddDomainShader(shader, descriptor);
 		}
 	}
 
@@ -2342,5 +2720,10 @@ namespace SIE
 		std::lock_guard lock(mutex);
 		availableTasks.clear();
 		tasksInProgress.clear();
+	}
+
+	bool ShaderCache::NeedsTessellationStages(const RE::BSShader& shader, int vertexDescriptor)
+	{
+		return false;
 	}
 }

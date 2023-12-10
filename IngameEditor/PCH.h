@@ -46,6 +46,13 @@ namespace stl
 		T::func = vtbl.write_vfunc(T::idx, T::thunk);
 	}
 
+	template <class F>
+	auto write_vfunc(const REL::ID& vtable, size_t index, F func)
+	{
+		REL::Relocation<std::uintptr_t> vtbl{ vtable };
+		return vtbl.write_vfunc(index, func);
+	}
+
 	template <class F, std::size_t offset, class T>
 	void write_vfunc()
 	{

@@ -5,6 +5,9 @@
 #include <condition_variable>
 #include <unordered_set>
 
+struct ID3D11DomainShader;
+struct ID3D11HullShader;
+
 namespace SIE
 {
 	enum class ShaderClass
@@ -12,7 +15,30 @@ namespace SIE
 		Vertex,
 		Pixel,
 		Compute,
+		Geometry,
+		Hull,
+		Domain,
 		Total,
+	};
+
+	struct HullShader
+	{
+		constexpr static std::uint32_t MaxConstants = 4;
+
+		std::uint32_t id;
+		ID3D11HullShader* shader = nullptr;
+		RE::BSGraphics::ConstantGroup constantBuffers[3];
+		std::array<std::int8_t, MaxConstants> constantTable;
+	};
+
+	struct DomainShader
+	{
+		constexpr static std::uint32_t MaxConstants = 4;
+
+		std::uint32_t id;
+		ID3D11DomainShader* shader = nullptr;
+		RE::BSGraphics::ConstantGroup constantBuffers[3];
+		std::array<std::int8_t, MaxConstants> constantTable;
 	};
 
 	class ShaderCompilationTask
@@ -68,6 +94,8 @@ namespace SIE
 			return instance;
 		}
 
+		static bool NeedsTessellationStages(const RE::BSShader& shader, int pixelDescriptor);
+
 		bool IsEnabled() const;
 		void SetEnabled(bool value);
 		bool IsEnabledForClass(ShaderClass shaderClass) const;
@@ -80,11 +108,15 @@ namespace SIE
 		RE::BSGraphics::VertexShader* GetVertexShader(const RE::BSShader& shader, uint32_t descriptor);
 		RE::BSGraphics::PixelShader* GetPixelShader(const RE::BSShader& shader,
 			uint32_t descriptor);
+		HullShader* GetHullShader(const RE::BSShader& shader, uint32_t descriptor);
+		DomainShader* GetDomainShader(const RE::BSShader& shader, uint32_t descriptor);
 
 		RE::BSGraphics::VertexShader* MakeAndAddVertexShader(const RE::BSShader& shader,
 			uint32_t descriptor);
 		RE::BSGraphics::PixelShader* MakeAndAddPixelShader(const RE::BSShader& shader,
 			uint32_t descriptor);
+		HullShader* MakeAndAddHullShader(const RE::BSShader& shader, uint32_t descriptor);
+		DomainShader* MakeAndAddDomainShader(const RE::BSShader& shader, uint32_t descriptor);
 
 	private:
 		ShaderCache();
@@ -98,8 +130,14 @@ namespace SIE
 		std::array<std::unordered_map<uint32_t, std::unique_ptr<RE::BSGraphics::PixelShader>>,
 			static_cast<size_t>(RE::BSShader::Type::Total)>
 			pixelShaders;
+		std::array<std::unordered_map<uint32_t, std::unique_ptr<HullShader>>,
+			static_cast<size_t>(RE::BSShader::Type::Total)>
+			hullShaders;
+		std::array<std::unordered_map<uint32_t, std::unique_ptr<DomainShader>>,
+			static_cast<size_t>(RE::BSShader::Type::Total)>
+			domainShaders;
 
-		bool isEnabled = false;
+		bool isEnabled = true;
 		uint32_t disabledClasses = 0;
 
 		bool isAsync = true;
@@ -107,5 +145,7 @@ namespace SIE
 		std::vector<std::jthread> compilationThreads;
 		std::mutex vertexShadersMutex;
 		std::mutex pixelShadersMutex;
+		std::mutex hullShadersMutex;
+		std::mutex domainShadersMutex;
 	};
 }
