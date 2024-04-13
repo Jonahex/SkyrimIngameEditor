@@ -1841,11 +1841,11 @@ namespace SIE
 			const RE::BSShader& shader, uint32_t descriptor) 
 		{
 			static const auto perTechniqueBuffersArray =
-				REL::Relocation<ID3D11Buffer**>(RELOCATION_ID(524755, 411371));
+				REL::Relocation<REX::W32::ID3D11Buffer**>(RELOCATION_ID(524755, 411371));
 			static const auto perMaterialBuffersArray =
-				REL::Relocation<ID3D11Buffer**>(RELOCATION_ID(524757, 411373));
+				REL::Relocation<REX::W32::ID3D11Buffer**>(RELOCATION_ID(524757, 411373));
 			static const auto perGeometryBuffersArray =
-				REL::Relocation<ID3D11Buffer**>(RELOCATION_ID(524759, 411375));
+				REL::Relocation<REX::W32::ID3D11Buffer**>(RELOCATION_ID(524759, 411375));
 			static const auto bufferData = REL::Relocation<void*>(RELOCATION_ID(524965, 411446));
 
 			auto rawPtr =
@@ -1910,11 +1910,11 @@ namespace SIE
 			const RE::BSShader& shader, uint32_t descriptor)
 		{
 			static const auto perTechniqueBuffersArray =
-				REL::Relocation<ID3D11Buffer**>(RELOCATION_ID(524761, 411377));
+				REL::Relocation<REX::W32::ID3D11Buffer**>(RELOCATION_ID(524761, 411377));
 			static const auto perMaterialBuffersArray =
-				REL::Relocation<ID3D11Buffer**>(RELOCATION_ID(524763, 411379));
+				REL::Relocation<REX::W32::ID3D11Buffer**>(RELOCATION_ID(524763, 411379));
 			static const auto perGeometryBuffersArray =
-				REL::Relocation<ID3D11Buffer**>(RELOCATION_ID(524765, 411381));
+				REL::Relocation<REX::W32::ID3D11Buffer**>(RELOCATION_ID(524765, 411381));
 			static const auto bufferData = REL::Relocation<void*>(RELOCATION_ID(524967, 411448));
 
 			auto newShader = std::make_unique<RE::BSGraphics::PixelShader>();
@@ -1972,20 +1972,21 @@ namespace SIE
 		}
 
 		template<size_t Count>
-		std::array<Microsoft::WRL::ComPtr<ID3D11Buffer>, Count> CreateDynamicConstantBuffers(ID3D11Device& device)
+		std::array<Microsoft::WRL::ComPtr<REX::W32::ID3D11Buffer>, Count>
+			CreateDynamicConstantBuffers(REX::W32::ID3D11Device& device)
 		{
-			std::array<Microsoft::WRL::ComPtr<ID3D11Buffer>, Count> result;
+			std::array<Microsoft::WRL::ComPtr<REX::W32::ID3D11Buffer>, Count> result;
 
-			D3D11_BUFFER_DESC descriptor;
-			descriptor.Usage = D3D11_USAGE_DYNAMIC;
-			descriptor.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-			descriptor.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-			descriptor.MiscFlags = 0; 
-			descriptor.StructureByteStride = 0;
+			REX::W32::D3D11_BUFFER_DESC descriptor;
+			descriptor.usage = REX::W32::D3D11_USAGE_DYNAMIC;
+			descriptor.bindFlags = REX::W32::D3D11_BIND_CONSTANT_BUFFER;
+			descriptor.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_WRITE;
+			descriptor.miscFlags = 0; 
+			descriptor.structureByteStride = 0;
 			for (UINT bufferIndex = 0; bufferIndex < Count; ++bufferIndex)
 			{
-				descriptor.ByteWidth = 4 * sizeof(float) * (bufferIndex + 1);
-				ID3D11Buffer* buffer;
+				descriptor.byteWidth = 4 * sizeof(float) * (bufferIndex + 1);
+				REX::W32::ID3D11Buffer* buffer;
 				device.CreateBuffer(&descriptor, nullptr, &buffer);
 				result[bufferIndex] = buffer;
 			}
@@ -1996,7 +1997,8 @@ namespace SIE
 		std::unique_ptr<HullShader> CreateHullShader(ID3DBlob& shaderData,
 			const RE::BSShader& shader, uint32_t descriptor)
 		{
-			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
+			static const auto device =
+				REL::Relocation<REX::W32::ID3D11Device**>(RE::Offset::D3D11Device);
 			static const auto perTechniqueBuffersArray =
 				CreateDynamicConstantBuffers<HullShader::MaxConstants>(**device);
 			static const auto perMaterialBuffersArray =
@@ -2061,7 +2063,8 @@ namespace SIE
 		std::unique_ptr<DomainShader> CreateDomainShader(ID3DBlob& shaderData,
 			const RE::BSShader& shader, uint32_t descriptor)
 		{
-			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
+			static const auto device =
+				REL::Relocation<REX::W32::ID3D11Device**>(RE::Offset::D3D11Device);
 			static const auto perTechniqueBuffersArray =
 				CreateDynamicConstantBuffers<DomainShader::MaxConstants>(**device);
 			static const auto perMaterialBuffersArray =
@@ -2508,7 +2511,7 @@ namespace SIE
 		if (const auto shaderBlob =
 				SShaderCache::CompileShader(ShaderClass::Vertex, shader, descriptor))
 		{
-			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
+			static const auto device = REL::Relocation<REX::W32::ID3D11Device**>(RE::Offset::D3D11Device);
 
 			auto newShader = SShaderCache::CreateVertexShader(*shaderBlob, shader,
 				descriptor);
@@ -2542,7 +2545,8 @@ namespace SIE
 		if (const auto shaderBlob =
 				SShaderCache::CompileShader(ShaderClass::Pixel, shader, descriptor))
 		{
-			static const auto device = REL::Relocation<ID3D11Device**>(RE::Offset::D3D11Device);
+			static const auto device =
+				REL::Relocation<REX::W32::ID3D11Device**>(RE::Offset::D3D11Device);
 
 			auto newShader = SShaderCache::CreatePixelShader(*shaderBlob, shader,
 				descriptor);

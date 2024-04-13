@@ -510,11 +510,11 @@ namespace SIE
 			{
 				const auto tes = RE::TES::GetSingleton();
 				tes->ForEachReference(
-					[](RE::TESObjectREFR& refr)
+					[](RE::TESObjectREFR* refr)
 					{
-						if (refr.IsDisabled())
+						if (refr->IsDisabled())
 						{
-							refr.Enable();
+							refr->Enable(false);
 						}
 						return RE::BSContainer::ForEachResult::kContinue;
 					});

@@ -95,12 +95,12 @@ namespace SIE
 		{ 
 			const auto tes = RE::TES::GetSingleton();
 			tes->ForEachReference(
-				[](RE::TESObjectREFR& refr)
+				[](RE::TESObjectREFR* refr)
 				{
-					if (refr.GetBaseObject()->GetFormType() == RE::FormType::NPC ||
-						refr.extraList.HasType<RE::ExtraOcclusionShape>())
+					if (refr->GetBaseObject()->GetFormType() == RE::FormType::NPC ||
+						refr->extraList.HasType<RE::ExtraOcclusionShape>())
 					{
-						refr.Disable();
+						refr->Disable();
 					}
 					return RE::BSContainer::ForEachResult::kContinue;
 				});

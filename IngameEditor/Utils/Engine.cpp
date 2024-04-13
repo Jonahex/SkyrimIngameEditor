@@ -267,11 +267,11 @@ namespace SIE
 		};
 
 		tes->ForEachReference(
-			[&](RE::TESObjectREFR& ref)
+			[&](RE::TESObjectREFR* ref)
 			{
-				if (ref.IsWater())
+				if (ref->IsWater())
 				{
-					ref.Disable();
+					ref->Disable();
 				}
 				return RE::BSContainer::ForEachResult::kContinue;
 			});
@@ -301,18 +301,18 @@ namespace SIE
 		}
 
 		tes->ForEachReference(
-			[&](RE::TESObjectREFR& ref)
+			[&](RE::TESObjectREFR* ref)
 			{
-				if (ref.IsWater())
+				if (ref->IsWater())
 				{
-					if (ref.formFlags & RE::TESForm::RecordFlags::kTemporary)
+					if (ref->formFlags & RE::TESForm::RecordFlags::kTemporary)
 					{
-						//ref.InitHavok();
+						//ref->InitHavok();
 						//createCollisionFunc(&ref);
 					}
 					else
 					{
-						ref.Enable();
+						ref->Enable(false);
 					}
 				}
 				return RE::BSContainer::ForEachResult::kContinue;

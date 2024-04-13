@@ -5,6 +5,9 @@
 
 #include <RE/T/TESDataHandler.h>
 
+#ifndef IMGUI_DEFINE_MATH_OPERATORS
+#	define IMGUI_DEFINE_MATH_OPERATORS
+#endif  // IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
 #include <magic_enum.hpp>
 
@@ -193,7 +196,7 @@ namespace SIE
 			}
 		}
 
-		ImGui::ListBoxHeader("##CurrentListBox");
+		ImGui::BeginListBox("##CurrentListBox");
 		for (int itemIndex = 0; itemIndex < items.size(); ++itemIndex)
 		{
 			if (ImGui::Selectable(std::format("{}##{}", GetFullName(*items[itemIndex]), itemIndex).c_str(),
@@ -202,7 +205,7 @@ namespace SIE
 				selectedIndex = itemIndex;
 			}
 		}
-		ImGui::ListBoxFooter();
+		ImGui::EndListBox();
 
 		if (selectedIndex >= 0 && selectedIndex < items.size())
 		{

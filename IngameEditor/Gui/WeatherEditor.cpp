@@ -198,7 +198,7 @@ namespace SIE
 				}
 			}
 
-			ImGui::ListBoxHeader("##CurrentListBox");
+			ImGui::BeginListBox("##CurrentListBox");
 			for (int currentIndex = 0; currentIndex < items.size(); ++currentIndex)
 			{
 				if (ImGui::Selectable(std::format("{}##{}",
@@ -210,7 +210,7 @@ namespace SIE
 					selectedIndex = currentIndex;
 				}
 			}
-			ImGui::ListBoxFooter();
+			ImGui::EndListBox();
 
 			if (selectedIndex >= 0 && selectedIndex < items.size())
 			{

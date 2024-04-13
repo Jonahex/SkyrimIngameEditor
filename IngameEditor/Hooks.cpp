@@ -85,7 +85,7 @@ namespace FrameAnnotations
 		ScopedFrameEvent(const std::string& eventName)
 		{
 			HRESULT hr = RE::BSGraphics::Renderer::GetDeviceContext()->QueryInterface(
-				__uuidof(annotation),
+				reinterpret_cast<const REX::W32::GUID&>(__uuidof(annotation)),
 				reinterpret_cast<void**>(&annotation));
 			if (!FAILED(hr))
 			{
@@ -109,7 +109,7 @@ namespace FrameAnnotations
 	{
 		ID3DUserDefinedAnnotation* annotation = nullptr;
 		HRESULT hr = RE::BSGraphics::Renderer::GetDeviceContext()->QueryInterface(
-			__uuidof(annotation),
+			reinterpret_cast<const REX::W32::GUID&>(__uuidof(annotation)),
 			reinterpret_cast<void**>(&annotation));
 		if (!FAILED(hr))
 		{
@@ -121,7 +121,7 @@ namespace FrameAnnotations
 	{
 		ID3DUserDefinedAnnotation* annotation = nullptr;
 		HRESULT hr = RE::BSGraphics::Renderer::GetDeviceContext()->QueryInterface(
-			__uuidof(annotation),
+			reinterpret_cast<const REX::W32::GUID&>(__uuidof(annotation)),
 			reinterpret_cast<void**>(&annotation));
 		if (!FAILED(hr))
 		{

@@ -522,7 +522,7 @@ namespace SIE
 			{
 				if (enabled)
 				{
-					target->Enable();
+					target->Enable(false);
 				}
 				else
 				{
@@ -935,7 +935,7 @@ namespace SIE
 								}
 							}
 
-							ImGui::ListBoxHeader("##RecordedEvents");
+							ImGui::BeginListBox("##RecordedEvents");
 							constexpr size_t maxShownEvents = 1000;
 
 							const auto& recordedEvents = tracker.GetRecordedEvents();
@@ -950,7 +950,7 @@ namespace SIE
 								ImGui::Text(it->ToString().c_str());
 								++lineCount;
 							}
-							ImGui::ListBoxFooter();
+							ImGui::EndListBox();
 						}
 
 						ImGui::TreePop();
