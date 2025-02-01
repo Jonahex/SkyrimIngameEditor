@@ -45,13 +45,16 @@ namespace SIE
 			}
 		}
 
-		static bool GizmoEditor(float model[4][4], bool allowAxisScale) 
+		static bool GizmoEditor(const char* label, float model[4][4], bool allowAxisScale) 
 		{
 			static bool showGizmo = true;
 			static bool isLocal = false;
 			static bool translate = true;
 			static bool rotate = true;
 			static bool scale = true;
+
+			ImGui::PushID(label);
+			SKSE::stl::scope_exit onScopeExit([]() { ImGui::PopID(); });
 
 			ImGui::Checkbox("Show Gizmo", &showGizmo);
 			if (!showGizmo)
@@ -136,7 +139,7 @@ namespace SIE
 			RE::NiTransform worldTransform = parentTransform * transform;
 			float model[4][4];
 			SNiTransformEditor::FillImGuizmoModelMatrix(worldTransform, model);
-			if (SNiTransformEditor::GizmoEditor(model, true))
+			if (SNiTransformEditor::GizmoEditor("Gizmo", model, true))
 			{
 				SNiTransformEditor::FillTransformFromImGuizmoModelMatrix(worldTransform, model);
 				transform = parentTransform.Invert() * worldTransform;
@@ -180,7 +183,7 @@ namespace SIE
 				ref.refScale / 100.f };
 			ImGuizmo::RecomposeMatrixFromComponents(&location.x, &angleDeg.x, &scale.x,
 				reinterpret_cast<float*>(model));
-			if (SNiTransformEditor::GizmoEditor(model, false))
+			if (SNiTransformEditor::GizmoEditor("Gizmo", model, false))
 			{
 				ImGuizmo::DecomposeMatrixToComponents(reinterpret_cast<float*>(model), &location.x,
 					&angleDeg.x, &scale.x);

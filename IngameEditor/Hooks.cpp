@@ -65,7 +65,7 @@
 #include <RE/R/RendererState.h>
 #include <RE/B/BSShaderAccumulator.h>
 
-#include <magic_enum.hpp>
+#include <magic_enum/magic_enum.hpp>
 
 #include <iostream>
 #include <tchar.h>

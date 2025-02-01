@@ -4,7 +4,7 @@
 #include <RE/I/ImageSpaceManager.h>
 #include <RE/V/VertexDesc.h>
 
-#include <magic_enum.hpp>
+#include <magic_enum/magic_enum.hpp>
 
 #include <d3d11.h>
 #include <d3dcompiler.h>

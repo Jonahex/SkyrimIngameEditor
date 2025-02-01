@@ -17,7 +17,7 @@
 #include <RE/T/TESWorldspace.h>
 #include <RE/U/UI.h>
 
-#include <magic_enum.hpp>
+#include <magic_enum/magic_enum.hpp>
 
 namespace SIE
 {

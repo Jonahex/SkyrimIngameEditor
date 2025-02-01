@@ -9,7 +9,7 @@
 #	define IMGUI_DEFINE_MATH_OPERATORS
 #endif  // IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
-#include <magic_enum.hpp>
+#include <magic_enum/magic_enum.hpp>
 
 namespace SIE
 {

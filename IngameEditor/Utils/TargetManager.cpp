@@ -143,7 +143,11 @@ namespace SIE
 	{
 		struct ConsoleProxy
 		{
+#ifdef SKYRIM_SUPPORT_AE
+			uint8_t pad00[48];
+#else
 			uint8_t pad00[56];
+#endif
 			RE::BSTArray<RE::ObjectRefHandle> array;
 			int32_t index = -1;
 		} proxy;

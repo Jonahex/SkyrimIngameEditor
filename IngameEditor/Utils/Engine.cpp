@@ -22,7 +22,7 @@
 #include <RE/T/TESWaterSystem.h>
 #include <RE/T/TESWorldSpace.h>
 
-#include <magic_enum.hpp>
+#include <magic_enum/magic_enum.hpp>
 
 namespace SIE
 {
