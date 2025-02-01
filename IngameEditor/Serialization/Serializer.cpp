@@ -197,11 +197,11 @@ namespace SIE
 	{
 		constexpr uint32_t indexMask = 0xFF000000;
 
-		const auto dataHandler = RE::TESDataHandler::GetSingleton();
-		const auto master =
-			dataHandler->LookupLoadedModByIndex((form.GetFormID() & indexMask) >> 24);
+		const auto srcFile = form.GetFile(0);
+		const auto overrideFile = form.GetDescriptionOwnerFile();
 
-	    forms[&form] = { { "Master", master->fileName }, { "Override", form.GetFile()->fileName },
+		forms[&form] = { { "Master", srcFile ? srcFile->fileName : "null" },
+			{ "Override", overrideFile ? overrideFile->fileName : "null" },
 			{ "FormKey", ToFormKey(&form) }, { "Form", form },
 			{ "References", SSerializer::CollectReferences(form) } };
 	}
@@ -209,7 +209,6 @@ namespace SIE
     void Serializer::Export(const std::string& path) const
 	{
 		nlohmann::json j;
-
 
 		for (auto& [form, json] : forms)
 		{
@@ -220,14 +219,21 @@ namespace SIE
 		const auto pathToAdd = std::string(pathToAddW.cbegin(), pathToAddW.cend());
 
 		logger::info("Calling EspGenerator for {} to {}", j.dump(4), pathToAdd);
-		const auto resultCode = ExportImpl(pathToAdd.c_str(), j.dump().c_str());
-		if (resultCode == 0)
+		try
 		{
-			logger::info("Successfully exported");
+			const auto resultCode = ExportImpl(pathToAdd.c_str(), j.dump().c_str());
+			if (resultCode == 0)
+			{
+				logger::info("Successfully exported");
+			}
+			else
+			{
+				logger::info("Export failed! Result code {}", resultCode);
+			}
 		}
-		else
+		catch (std::exception e)
 		{
-			logger::info("Export failed!");
+			logger::info("Export failed with exception {}", e.what());
 		}
 	}
 
