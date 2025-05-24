@@ -233,8 +233,8 @@ namespace SIE
 			const auto exteriorData = cell->GetCoordinates();
 			player->SetPosition(
 				{ exteriorData->worldX + 2048.f, exteriorData->worldY + 2048.f, 50000.f }, false);
-			player->SetRotationX(90);
-			player->SetRotationZ(0);
+			player->SetLooking(90);
+			player->SetHeading(0);
 			ResetTimeTo(shootingTime);
 			SOverheadBuilder::SetupWeather();
 		}

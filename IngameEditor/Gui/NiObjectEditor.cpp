@@ -1205,25 +1205,23 @@ namespace SIE
 
 			{
 				size_t modifierIndex = 0;
-				auto modifierItem = particleSystem.modifierList.head;
-				while (modifierItem != nullptr)
+				for (auto it = particleSystem.modifierList.begin();
+					it != particleSystem.modifierList.end(); ++it)
 				{
-					if (modifierItem->element != nullptr)
+					if (*it != nullptr)
 					{
-						const std::string& typeName =
-							rttiCache.GetTypeName(modifierItem->element.get());
+						const std::string& typeName = rttiCache.GetTypeName(it->get());
 						if (PushingCollapsingHeader(std::format("[Modifier] <{}> {}##{}", typeName,
-								modifierItem->element->name.c_str(), modifierIndex)
-														.c_str()))
+								(*it)->name.c_str(), modifierIndex)
+									.c_str()))
 						{
-							if (rttiCache.BuildEditor(modifierItem->element.get(), context))
+							if (rttiCache.BuildEditor(it->get(), context))
 							{
 								wasEdited = true;
 							}
 							ImGui::TreePop();
 						}
 					}
-					modifierItem = modifierItem->next;
 				}
 			}
 
@@ -1257,8 +1255,10 @@ namespace SIE
 
 			bool wasEdited = false;
 
-			if (EnumSelector("Billboard Mode", billboardNode.billboardMode))
+			auto mode = REX::EnumSet(billboardNode.GetMode());
+			if (EnumSelector("Billboard Mode", mode))
 			{
+				billboardNode.SetMode(mode.get());
 				wasEdited = true;
 			}
 

@@ -104,7 +104,7 @@ namespace ImGui
 		}
 		popupMaxHeightInItems = ImMin(popupMaxHeightInItems, showCount);
 
-		if (!(g.NextWindowData.Flags & ImGuiNextWindowDataFlags_HasSizeConstraint))
+		if (!(g.NextWindowData.WindowFlags & ImGuiNextWindowDataFlags_HasSizeConstraint))
 		{
 			SetNextWindowSizeConstraints(ImVec2(0, 0),
 				ImVec2(FLT_MAX, CalcMaxPopupHeightFromItemCount(popupMaxHeightInItems + 3)));

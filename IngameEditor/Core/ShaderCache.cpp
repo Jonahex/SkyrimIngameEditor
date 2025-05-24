@@ -1780,7 +1780,7 @@ namespace SIE
 			const auto type = shader.shaderType.get();
 			const std::wstring path = GetShaderPath(
 				shader.shaderType == RE::BSShader::Type::ImageSpace ?
-					std::string_view(static_cast<const RE::BSImagespaceShader&>(shader).originalShaderName.c_str()) :
+					std::string_view(static_cast<const RE::BSImagespaceShader&>(shader).originalShaderName) :
 					shader.fxpFilename);
 
 			std::array<D3D_SHADER_MACRO, 64> defines;
@@ -2259,7 +2259,7 @@ namespace SIE
 				{ "BSImagespaceShaderRefraction", static_cast<uint32_t>(ISRefraction) },
 			};
 
-			auto it = descriptors.find(imagespaceShader.name.c_str());
+			auto it = descriptors.find(imagespaceShader.name);
 			if (it == descriptors.cend())
 			{
 				return std::numeric_limits<uint32_t>::max();

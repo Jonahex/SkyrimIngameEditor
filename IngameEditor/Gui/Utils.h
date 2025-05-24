@@ -56,7 +56,7 @@ namespace SIE
 	}
 
 	template<typename EnumT, typename UnderlyingT>
-	bool FlagEdit(const char* label, stl::enumeration<EnumT, UnderlyingT>& flagsValue,
+	bool FlagEdit(const char* label, REX::EnumSet<EnumT, UnderlyingT>& flagsValue,
 		EnumT flagMask)
 	{
 		bool isSelected = flagsValue.any(flagMask);
@@ -165,7 +165,7 @@ namespace SIE
 	}
 
 	template <typename EnumType, typename UnderlyingType>
-	bool EnumSelector(const char* label, stl::enumeration<EnumType, UnderlyingType>& enumValue)
+	bool EnumSelector(const char* label, REX::EnumSet<EnumType, UnderlyingType>& enumValue)
 	{
 		bool wasSelected = false;
 		auto value = enumValue.get();

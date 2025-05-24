@@ -231,10 +231,10 @@ namespace SIE
 		waterProperty->cellX = cell->GetCoordinates()->cellX;
 		waterProperty->cellY = cell->GetCoordinates()->cellY;
 		waterProperty->unk98 = (uGridsToLoad + waterProperty->cellX + uGridsToLoad / 2 -
-								   tes->unk0B0 + waterSystem->unk018) %
+								   tes->currentGridX + waterSystem->unk018) %
 		                       uGridsToLoad;
 		waterProperty->unk9C = (uGridsToLoad + waterProperty->cellY + uGridsToLoad / 2 -
-								   tes->unk0B4 + waterSystem->unk01C) %
+								   tes->currentGridY + waterSystem->unk01C) %
 		                       uGridsToLoad;
 
 		if (!a3)
@@ -290,7 +290,7 @@ namespace SIE
 							cell3d->children[2]->collisionObject.reset();
 						}
 						cell->autoWaterObjects.clear();
-						cell->placeableWaterObjects.clear();
+						cell->waterObjects.clear();
 						cell->waterFalls.clear();
 						//cell->extraList.RemoveByType(RE::ExtraDataType::kWaterData);
 						loadCellAutoWaterFunc(*unkWaterSingleton, cell, false);
