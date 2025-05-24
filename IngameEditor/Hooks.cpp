@@ -1469,7 +1469,11 @@ namespace BehaviorGraph
 	struct TESForm_SetFormEditorID
 	{
 		static bool thunk(RE::TESWeather* form, const char* editorId)
-	    {
+		{
+			if (IsBadStringPtrA(editorId, 256))
+			{
+				return true;
+			}
 			EditorIDs[form->GetFormID()] = editorId;
 			return true;
 		}
