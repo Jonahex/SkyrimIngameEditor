@@ -141,54 +141,86 @@ namespace SIE
 
 	void TargetManager::TrySetTargetAt(int screenX, int screenY)
 	{
-		struct ConsoleProxy
+		struct ConsoleProxyPre161130
 		{
-#ifdef SKYRIM_SUPPORT_AE
-			uint8_t pad00[48];
-#else
 			uint8_t pad00[56];
-#endif
 			RE::BSTArray<RE::ObjectRefHandle> array;
 			int32_t index = -1;
-		} proxy;
+		} proxyPre161130;
 
-		static const REL::Relocation<void (*)(ConsoleProxy*)> consoleSelection(
+		struct ConsoleProxyPost161130
+		{
+			uint8_t pad00[48];
+			RE::BSTArray<RE::ObjectRefHandle> array;
+			int32_t index = -1;
+		} proxyPost161130;
+
+		static const REL::Relocation<void (*)(void*)> consoleSelection(
 			RE::Offset::Console::SelectReference);
 		static const REL::Relocation<float**> screenPoint(RELOCATION_ID(517043, 403551));
 
-		float backupX;
-		float backupY;
-		backupX = (*screenPoint)[1];
-		backupY = (*screenPoint)[2];
-
-		(*screenPoint)[1] = screenX;
-		(*screenPoint)[2] = screenY;
-		consoleSelection(&proxy);
-
-		if (proxy.index >= 0 && proxy.index < static_cast<int32_t>(proxy.array.size()))
+		auto impl = [&](auto& proxy)
 		{
-			auto newTarget = proxy.array[proxy.index].get();
-			if (target == newTarget)
+			float backupX;
+			float backupY;
+			backupX = (*screenPoint)[1];
+			backupY = (*screenPoint)[2];
+
+			(*screenPoint)[1] = screenX;
+			(*screenPoint)[2] = screenY;
+			consoleSelection(&proxy);
+
+			if (proxy.index >= 0 && proxy.index < static_cast<int32_t>(proxy.array.size()))
 			{
-				newTarget = nullptr;
+				auto newTarget = proxy.array[proxy.index].get();
+				if (target == newTarget)
+				{
+					newTarget = nullptr;
+				}
+				if (target != newTarget)
+				{
+					if (target != nullptr)
+					{
+						STargetManager::SetHighlight(target->Get3D2(), false);
+					}
+					target = newTarget;
+					if (target != nullptr && enableTargetHighlight)
+					{
+						STargetManager::SetHighlight(target->Get3D2(), true);
+					}
+					GraphTracker::Instance().SetTarget(target.get());
+				}
 			}
-			if (target != newTarget)
+
+			(*screenPoint)[1] = backupX;
+			(*screenPoint)[2] = backupY;
+		};
+
+		const auto version = REL::Module::get().version();
+		if (version[0] != 1)
+		{
+			return;
+		}
+		if (version[1] < 6)
+		{
+			impl(proxyPre161130);
+		}
+		else if (version[1] == 6)
+		{
+			if (version[2] < 1130)
 			{
-				if (target != nullptr)
-				{
-					STargetManager::SetHighlight(target->Get3D2(), false);
-				}
-				target = newTarget;
-				if (target != nullptr && enableTargetHighlight)
-				{
-					STargetManager::SetHighlight(target->Get3D2(), true);
-				}
-				GraphTracker::Instance().SetTarget(target.get());
+				impl(proxyPre161130);
+			}
+			else
+			{
+				impl(proxyPost161130);
 			}
 		}
+		else
+		{
+			impl(proxyPost161130);
+		}
 
-		(*screenPoint)[1] = backupX;
-		(*screenPoint)[2] = backupY;
 	}
 
 	bool TargetManager::GetEnableTargetHighlight() const 
